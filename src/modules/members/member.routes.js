@@ -42,6 +42,7 @@ const memberBody = z.object({
   emergencyContact: z.object({ name: optionalStr(80), phone: optionalStr(15), relation: optionalStr(40) }).optional(),
   healthNotes: optionalStr(1000),
   trainerId: objectId.optional().nullable(),
+  companyId: objectId.optional().nullable(),
   source: optionalStr(40),
   notes: optionalStr(1000),
   joinedAt: z.coerce.date().optional(),
@@ -115,7 +116,7 @@ router.post(
 
 router.get('/:id', permit('members.read'), async (req, res) => {
   const member = await loadMember(req, req.params.id);
-  await member.populate([{ path: 'trainerId', select: 'name phone' }, { path: 'branchId', select: 'name code' }]);
+  await member.populate([{ path: 'trainerId', select: 'name phone' }, { path: 'branchId', select: 'name code' }, { path: 'companyId', select: 'name discountPercent billTo' }]);
   const { access, subscriptions } = await loadAccess(member);
   const deviceUsers = await DeviceUser.find({ memberId: member._id }).populate('deviceId', 'name serialNo lastSeenAt').lean();
   subscriptions.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));

@@ -13,6 +13,7 @@ import { refreshMember } from '../members/member.state.js';
 import { inBackground, sendWelcomeEmail, sendInvoiceEmail } from '../notifications/emails.js';
 import { evaluateCoupon, consumeCoupon } from '../coupons/coupon.service.js';
 import { Coupon } from '../coupons/coupon.model.js';
+import { Company } from '../companies/company.model.js';
 
 /** Last valid day (inclusive) for a plan starting on `start`. */
 export function computeEndDate(start, plan) {
@@ -46,8 +47,13 @@ export async function nextReceiptNo(gym, at = new Date()) {
   return `${gym.receiptPrefix}/${fy}/${String(seq).padStart(5, '0')}`;
 }
 
-async function createInvoice({ gym, member, sub, items }) {
+async function createInvoice({ gym, member, sub, items, company }) {
   const branch = await Branch.findById(member.branchId).lean();
+  // Company-billed: invoice in the company's name (with its GSTIN), member shown on the line items.
+  const billedTo =
+    company && sub.billTo === 'company'
+      ? { name: company.name, phone: company.phone, email: company.email, memberCode: member.memberCode, address: [company.address, company.gstin && `GSTIN: ${company.gstin}`].filter(Boolean).join(' | ') }
+      : { name: member.name, phone: member.phone, email: member.email, memberCode: member.memberCode, address: member.address };
   return Invoice.create({
     invoiceNo: await nextInvoiceNo(gym),
     memberId: member._id,
@@ -59,7 +65,7 @@ async function createInvoice({ gym, member, sub, items }) {
     taxPercent: sub.taxPercent,
     taxAmount: sub.taxAmount,
     total: sub.totalAmount,
-    billedTo: { name: member.name, phone: member.phone, email: member.email, memberCode: member.memberCode, address: member.address },
+    billedTo,
     seller: {
       name: gym.name,
       gstin: gym.gstin,
@@ -112,8 +118,10 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
   let couponDiscount = 0;
   let coupon = null;
   if (couponCode) ({ coupon, discount: couponDiscount } = await evaluateCoupon(couponCode, { plan, gross, isNewMember: !everHad }));
-  const totalDiscount = discount + couponDiscount;
-  if (discount < 0 || totalDiscount > gross) throw ApiError.badRequest('Discount cannot exceed the amount');
+  const company = member.companyId ? await Company.findOne({ _id: member.companyId, isActive: true }).lean() : null;
+  const companyDiscount = company?.discountPercent ? Math.round((gross * company.discountPercent) / 100) : 0;
+  const totalDiscount = Math.min(gross, discount + couponDiscount + companyDiscount);
+  if (discount < 0 || discount + couponDiscount > gross) throw ApiError.badRequest('Discount cannot exceed the amount');
   const taxPercent = plan.taxPercent ?? gym.taxPercent ?? 0;
   const taxable = gross - totalDiscount;
   const taxAmount = calcTax(taxable, taxPercent);
@@ -124,6 +132,8 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
     discount: totalDiscount,
     couponDiscount,
     coupon,
+    company,
+    companyDiscount,
     taxPercent,
     taxAmount,
     totalAmount: taxable + taxAmount,
@@ -134,7 +144,7 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
  * Creates a new / renewal membership with invoice and an optional first payment.
  */
 export async function createSubscription({
-  memberId, planId, startDate, discount = 0, waiveJoiningFee = false, couponCode, payment, user, type, allowBackdate = false,
+  memberId, planId, startDate, discount = 0, waiveJoiningFee = false, couponCode, payment, user, type, allowBackdate = false, familyMemberIds = [],
 }) {
   const [member, plan, gym] = await Promise.all([
     Member.findOne({ _id: memberId, isDeleted: false }).lean(),
@@ -156,6 +166,24 @@ export async function createSubscription({
   if (!allowBackdate && ymd(start) < ymd(addDays(new Date(), -30))) throw ApiError.badRequest('Start date cannot be more than 30 days in the past');
   const end = computeEndDate(start, plan);
   assertNoOverlap(existing, start, end);
+
+  // Family plan: validate the other members before charging anything.
+  const family = [];
+  const uniqueFamily = [...new Set(familyMemberIds.map(String))].filter((id) => id !== String(member._id));
+  if (uniqueFamily.length) {
+    if (uniqueFamily.length > (plan.maxMembers || 1) - 1) throw ApiError.badRequest(`${plan.name} covers at most ${plan.maxMembers || 1} member(s)`);
+    for (const id of uniqueFamily) {
+      const fm = await Member.findOne({ _id: id, isDeleted: false }).lean();
+      if (!fm) throw ApiError.notFound('Family member not found');
+      if (String(fm.branchId) !== String(member.branchId)) throw ApiError.badRequest(`${fm.name} belongs to another branch`);
+      try {
+        assertNoOverlap(await liveSubs(fm._id).lean(), start, end);
+      } catch (err) {
+        throw ApiError.conflict(`${fm.name}: ${err.message}`);
+      }
+      family.push(fm);
+    }
+  }
 
   const q = await quoteSubscription({ member, plan, discount, waiveJoiningFee, couponCode, gym });
   if (q.coupon) await consumeCoupon(q.coupon._id);
@@ -185,6 +213,10 @@ export async function createSubscription({
       joiningFee: q.joiningFee,
       discount: q.discount,
       couponCode: q.coupon?.code,
+      companyId: q.company?._id,
+      companyDiscount: q.companyDiscount,
+      billTo: q.company?.billTo === 'company' ? 'company' : 'member',
+      familyMemberIds: family.map((f) => f._id),
       taxPercent: q.taxPercent,
       taxAmount: q.taxAmount,
       totalAmount: q.totalAmount,
@@ -197,15 +229,35 @@ export async function createSubscription({
     throw err;
   }
 
-  const items = [{ description: `${plan.name} membership (${ymd(start)} to ${ymd(end)})`, amount: plan.price }];
+  const who = [member, ...family].map((m) => `${m.name} #${m.memberCode}`).join(', ');
+  const items = [{ description: `${plan.name} membership (${ymd(start)} to ${ymd(end)}) - ${who}`, amount: plan.price }];
   if (q.joiningFee) items.push({ description: 'Joining fee', amount: q.joiningFee });
-  const invoice = await createInvoice({ gym, member, sub, items });
+  const invoice = await createInvoice({ gym, member, sub, items, company: q.company });
   sub.invoiceId = invoice._id;
   await sub.save();
 
   let firstPayment = null;
   if (payment?.amount > 0) {
     ({ payment: firstPayment } = await recordPayment({ sub, ...payment, user, gym }));
+  }
+  // Family members get their own linked (zero-priced) memberships: own access, own biometric entry.
+  for (const fm of family) {
+    await Subscription.create({
+      memberId: fm._id,
+      branchId: fm.branchId,
+      planId: plan._id,
+      plan: sub.plan,
+      type: sub.type,
+      startDate: start,
+      endDate: end,
+      originalEndDate: end,
+      groupOf: sub._id,
+      price: 0,
+      totalAmount: 0,
+      dueAmount: 0,
+      createdBy: user?._id,
+    });
+    await refreshMember(fm._id);
   }
   const access = await refreshMember(member._id);
   await inBackground('subscription-emails', async () => {
@@ -219,6 +271,7 @@ export async function createSubscription({
 export async function changePlan({ subscriptionId, planId, discount = 0, payment, user }) {
   const current = await Subscription.findOne({ _id: subscriptionId, status: 'active' });
   if (!current) throw ApiError.notFound('Active membership not found');
+  if (current.groupOf || current.familyMemberIds?.length) throw ApiError.badRequest('Family plans cannot be changed. Cancel and add a new plan instead.');
   const today = startOfDay();
   if (!(ymd(current.startDate) <= ymd(today) && ymd(today) <= ymd(current.endDate))) {
     throw ApiError.badRequest('Only the currently running membership can be changed');
@@ -341,6 +394,15 @@ export async function cancel({ subscriptionId, reason }) {
   sub.cancelReason = reason;
   sub.dueAmount = 0; // pending dues are written off on cancellation
   await sub.save();
+  // Cancelling a family plan cancels everyone on it.
+  const linked = await Subscription.find({ groupOf: sub._id, status: 'active' });
+  for (const l of linked) {
+    l.status = 'cancelled';
+    l.cancelledAt = new Date();
+    l.cancelReason = `Family plan cancelled: ${reason}`;
+    await l.save();
+    await refreshMember(l.memberId);
+  }
   const access = await refreshMember(sub.memberId);
   return { subscription: sub, access };
 }

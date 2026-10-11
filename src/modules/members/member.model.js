@@ -18,6 +18,7 @@ const memberSchema = new mongoose.Schema(
     healthNotes: String,
     trainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     source: { type: String, default: 'walk-in' },
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' }, // corporate tie-up
     notes: String,
     documents: [
       {

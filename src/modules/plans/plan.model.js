@@ -16,6 +16,8 @@ const planSchema = new mongoose.Schema(
     accessEnd: String, // HH:MM
     // Access time-zone number configured on the biometric device for this slot (1 = 24 hours).
     deviceTimezoneId: { type: Number, default: 1, min: 1, max: 50 },
+    // Family / couple plans: one purchase covers up to this many members (1 = individual).
+    maxMembers: { type: Number, default: 1, min: 1, max: 10 },
     // Empty = available in all branches
     branchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
     isActive: { type: Boolean, default: true },

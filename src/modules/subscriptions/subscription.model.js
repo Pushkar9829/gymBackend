@@ -50,6 +50,14 @@ const subscriptionSchema = new mongoose.Schema(
     dueAmount: { type: Number, default: 0 },
     invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
 
+    // Family plans: the paying (primary) membership lists the others; each other membership points back.
+    familyMemberIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Member' }],
+    groupOf: { type: mongoose.Schema.Types.ObjectId, ref: 'Subscription' },
+    // Corporate
+    companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' },
+    companyDiscount: { type: Number, default: 0 },
+    billTo: { type: String, enum: ['member', 'company'], default: 'member' },
+
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true },
@@ -58,5 +66,7 @@ const subscriptionSchema = new mongoose.Schema(
 subscriptionSchema.index({ memberId: 1, startDate: 1 });
 subscriptionSchema.index({ branchId: 1, endDate: 1, status: 1 });
 subscriptionSchema.index({ dueAmount: 1 });
+subscriptionSchema.index({ groupOf: 1 });
+subscriptionSchema.index({ companyId: 1, status: 1 });
 
 export const Subscription = mongoose.model('Subscription', subscriptionSchema);

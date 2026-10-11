@@ -25,6 +25,7 @@ const body = z.object({
   accessStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM').nullable().optional(),
   accessEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM').nullable().optional(),
   deviceTimezoneId: z.number().int().min(1).max(50).optional(),
+  maxMembers: z.number().int().min(1).max(10).optional(),
   maxFreezes: z.number().int().min(0).max(12).optional(),
   branchIds: z.array(objectId).optional(),
   isActive: z.boolean().optional(),

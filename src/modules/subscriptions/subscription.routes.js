@@ -50,6 +50,7 @@ router.post(
       discount: z.number().int().min(0).default(0),
       waiveJoiningFee: z.boolean().default(false),
       couponCode: z.string().trim().max(20).optional(),
+      familyMemberIds: z.array(objectId).max(9).default([]),
       payment: paymentBody,
     }),
   }),
