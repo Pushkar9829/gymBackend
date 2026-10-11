@@ -11,6 +11,7 @@ export const PERMISSIONS = [
   'devices.read', 'devices.write',
   'pt.read', 'pt.sell', 'pt.log', 'pt.manage',
   'fitness.read', 'fitness.write',
+  'classes.read', 'classes.write', 'classes.book', 'classes.attendance',
   'users.read', 'users.write',
   'branches.write', 'settings.write',
 ];
@@ -23,8 +24,9 @@ export const ROLES = {
     'payments.read', 'payments.create', 'attendance.read', 'attendance.write',
     'leads.read', 'leads.write', 'expenses.read', 'expenses.write', 'devices.read',
     'pt.read', 'pt.sell', 'pt.log', 'fitness.read',
+    'classes.read', 'classes.book', 'classes.attendance',
   ],
-  trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write'],
+  trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write', 'classes.read', 'classes.attendance'],
 };
 
 export const ROLE_NAMES = Object.keys(ROLES);

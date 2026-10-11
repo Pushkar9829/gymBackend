@@ -35,6 +35,7 @@ import couponRoutes from './modules/coupons/coupon.routes.js';
 import announcementRoutes from './modules/messaging/announcement.routes.js';
 import ptRoutes from './modules/pt/pt.routes.js';
 import fitnessRoutes from './modules/fitness/fitness.routes.js';
+import { classRouter, portalClassRouter } from './modules/classes/class.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -109,8 +110,10 @@ export function createApp() {
   api.use('/announcements', announcementRoutes);
   api.use('/pt', ptRoutes);
   api.use('/fitness', fitnessRoutes);
+  api.use('/classes', classRouter);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
+  api.use('/me', portalClassRouter);
   api.use('/me', portalRoutes);
   app.use('/api/v1', api);
 
