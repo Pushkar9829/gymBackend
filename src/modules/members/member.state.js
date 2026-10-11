@@ -25,7 +25,8 @@ export async function refreshMember(memberOrId, { now = new Date(), settings, fo
   if (!member) return null;
   const { access, subscriptions } = await loadAccess(member, { now, settings });
 
-  const shown = access.current || (access.membershipStatus === 'upcoming' ? null : latest(subscriptions));
+  const upcoming = access.membershipStatus === 'upcoming' ? earliestFuture(subscriptions, now) : null;
+  const shown = access.current || upcoming || latest(subscriptions);
   const totalDue = subscriptions.filter((s) => s.status !== 'cancelled').reduce((sum, s) => sum + (s.dueAmount || 0), 0);
 
   await Member.updateOne(
@@ -35,7 +36,7 @@ export async function refreshMember(memberOrId, { now = new Date(), settings, fo
         membershipStatus: access.membershipStatus,
         membershipStart: access.window?.from || shown?.startDate || null,
         membershipEnd: access.window?.to || shown?.endDate || null,
-        currentPlanName: (access.current || shown)?.plan?.name || null,
+        currentPlanName: shown?.plan?.name || null,
         dueAmount: totalDue,
       },
     },
@@ -51,6 +52,11 @@ export async function refreshMember(memberOrId, { now = new Date(), settings, fo
   }
   return access;
 }
+
+const earliestFuture = (subs, now) =>
+  subs
+    .filter((s) => s.status !== 'cancelled' && new Date(s.endDate) >= now)
+    .sort((a, b) => new Date(a.startDate) - new Date(b.startDate))[0] || null;
 
 const latest = (subs) =>
   subs.filter((s) => s.status !== 'cancelled').sort((a, b) => new Date(b.endDate) - new Date(a.endDate))[0] || null;
