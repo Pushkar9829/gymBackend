@@ -10,6 +10,8 @@ const userSchema = new mongoose.Schema(
     role: { type: String, enum: ROLE_NAMES, required: true },
     branchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
     isActive: { type: Boolean, default: true },
+    // Trainers: share of the PT package price earned per session (percent).
+    ptCommissionPercent: { type: Number, default: 0, min: 0, max: 100 },
     lastLoginAt: Date,
   },
   { timestamps: true },

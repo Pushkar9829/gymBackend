@@ -33,6 +33,7 @@ import uploadRoutes from './modules/uploads/upload.routes.js';
 import portalRoutes from './modules/portal/portal.routes.js';
 import couponRoutes from './modules/coupons/coupon.routes.js';
 import announcementRoutes from './modules/messaging/announcement.routes.js';
+import ptRoutes from './modules/pt/pt.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -41,7 +42,19 @@ export function createApp() {
   app.set('trust proxy', 1); // Render / Vercel sit behind one proxy hop
   app.disable('x-powered-by');
 
-  if (!env.isTest) app.use(pinoHttp({ logger, autoLogging: { ignore: (req) => req.url === '/api/health' || req.url.startsWith('/iclock/getrequest') } }));
+  if (!env.isTest) {
+    app.use(
+      pinoHttp({
+        logger,
+        autoLogging: { ignore: (req) => req.url === '/api/health' || req.url.startsWith('/iclock/getrequest') },
+        // One short line per request: no headers or cookies in the logs.
+        serializers: {
+          req: (req) => ({ method: req.method, url: req.url }),
+          res: (res) => ({ status: res.statusCode }),
+        },
+      }),
+    );
+  }
 
   // Biometric devices: plain-text protocol, no CORS/JSON. Mounted before JSON parsing.
   app.use('/iclock', iclockRoutes);
@@ -93,6 +106,7 @@ export function createApp() {
   api.use('/uploads', uploadRoutes);
   api.use('/coupons', couponRoutes);
   api.use('/announcements', announcementRoutes);
+  api.use('/pt', ptRoutes);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalRoutes);

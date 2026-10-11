@@ -34,7 +34,7 @@ function assertNoOverlap(subs, start, end, ignoreId) {
   }
 }
 
-async function nextInvoiceNo(gym, at = new Date()) {
+export async function nextInvoiceNo(gym, at = new Date()) {
   const fy = financialYear(at);
   const seq = await nextSeq(`invoice:${fy}`);
   return `${gym.invoicePrefix}/${fy}/${String(seq).padStart(5, '0')}`;
@@ -74,19 +74,21 @@ async function createInvoice({ gym, member, sub, items }) {
 /**
  * Applies a payment to a subscription atomically (never lets paid exceed total).
  */
-export async function recordPayment({ sub, amount, mode, reference, note, paidAt, user, gym }) {
+export async function recordPayment({ sub, amount, mode, reference, note, paidAt, user, gym, kind = 'subscription' }) {
   gym = gym || (await getGym());
-  const updated = await Subscription.findOneAndUpdate(
+  const { PtPurchase } = await import('../pt/pt.model.js');
+  const Model = kind === 'pt' ? PtPurchase : Subscription;
+  const updated = await Model.findOneAndUpdate(
     { _id: sub._id, status: 'active', dueAmount: { $gte: amount } },
     { $inc: { paidAmount: amount, dueAmount: -amount } },
     { returnDocument: 'after' },
   );
-  if (!updated) throw ApiError.badRequest('Amount is more than the pending due, or membership is cancelled');
+  if (!updated) throw ApiError.badRequest(`Amount is more than the pending due, or the ${kind === 'pt' ? 'PT package' : 'membership'} is cancelled`);
   const payment = await Payment.create({
     receiptNo: await nextReceiptNo(gym),
     memberId: sub.memberId,
     branchId: sub.branchId,
-    subscriptionId: sub._id,
+    [kind === 'pt' ? 'ptPurchaseId' : 'subscriptionId']: sub._id,
     invoiceId: sub.invoiceId,
     amount,
     mode,

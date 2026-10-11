@@ -6,7 +6,7 @@ import { getGym } from '../settings/gym.model.js';
 import { Member } from '../members/member.model.js';
 import { Invoice } from '../invoices/invoice.model.js';
 import { Payment } from '../payments/payment.model.js';
-import { Subscription } from '../subscriptions/subscription.model.js';
+import { loadBill } from '../payments/billing.js';
 import { invoicePdf, receiptPdf } from '../invoices/invoice.pdf.js';
 import { sendMemberEmail } from './notification.service.js';
 import { notifyMember } from '../messaging/messaging.service.js';
@@ -56,8 +56,12 @@ export async function sendInvoiceEmail(invoiceId) {
   const gym = await enabledGym();
   const invoice = gym && (await Invoice.findById(invoiceId).lean());
   if (!invoice) return;
-  const [member, sub] = await Promise.all([Member.findById(invoice.memberId).lean(), Subscription.findById(invoice.subscriptionId).lean()]);
-  if (!member?.email) return;
+  const [member, { bill: sub, kind }] = await Promise.all([Member.findById(invoice.memberId).lean(), loadBill(invoice)]);
+  if (!member?.email || !sub) return;
+  const what =
+    kind === 'pt'
+      ? `Your PT package "${sub.package?.name}" (${sub.sessionsTotal} sessions) is valid till ${dmy(sub.validTo)}.`
+      : `Your ${sub.plan?.name || ''} membership is valid from ${dmy(sub.startDate)} to ${dmy(sub.endDate)}.`;
   const pdf = await invoicePdf(invoice, { paid: sub?.paidAmount || 0, due: sub?.dueAmount || 0 });
   await sendMemberEmail({
     member,
@@ -67,7 +71,7 @@ export async function sendInvoiceEmail(invoiceId) {
     text: [
       `Hi ${member.name},`,
       '',
-      `Thank you! Your ${sub?.plan?.name || ''} membership is valid from ${dmy(sub.startDate)} to ${dmy(sub.endDate)}.`,
+      `Thank you! ${what}`,
       `Invoice total: ${formatINR(invoice.total)} · Paid: ${formatINR(sub?.paidAmount)} · Due: ${formatINR(sub?.dueAmount)}`,
       '',
       'The invoice is attached.',
@@ -78,7 +82,7 @@ export async function sendInvoiceEmail(invoiceId) {
 }
 
 export async function sendReceiptEmail(paymentId) {
-  const payment = await Payment.findById(paymentId).populate(['memberId', 'subscriptionId']).lean();
+  const payment = await Payment.findById(paymentId).populate(['memberId', 'subscriptionId', 'ptPurchaseId']).lean();
   if (!payment?.memberId) return;
   const isRefund = payment.type === 'refund';
   if (!isRefund) {
@@ -102,7 +106,7 @@ export async function sendReceiptEmail(paymentId) {
       '',
       isRefund
         ? `We have refunded ${formatINR(payment.amount)} (${payment.mode.toUpperCase()}).`
-        : `We have received ${formatINR(payment.amount)} (${payment.mode.toUpperCase()}). Remaining due: ${formatINR(payment.subscriptionId?.dueAmount)}.`,
+        : `We have received ${formatINR(payment.amount)} (${payment.mode.toUpperCase()}). Remaining due: ${formatINR((payment.subscriptionId || payment.ptPurchaseId)?.dueAmount)}.`,
       '',
       'The receipt is attached.',
       gym.name,

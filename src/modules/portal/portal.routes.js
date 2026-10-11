@@ -12,6 +12,7 @@ import { loadAccess } from '../members/member.state.js';
 import { qrPayload } from '../access/qr.js';
 import { sendInvoicePdf } from '../invoices/invoice.routes.js';
 import { getGym } from '../settings/gym.model.js';
+import { PtPurchase, PtSession } from '../pt/pt.model.js';
 
 // Member-facing API (PWA). Everything is scoped to the logged-in member.
 const router = Router();
@@ -47,6 +48,14 @@ router.get('/', async (req, res) => {
       card: { payload, qr: await QRCode.toDataURL(payload, { margin: 1, width: 300 }) },
     },
   });
+});
+
+router.get('/pt', async (req, res) => {
+  const [purchases, sessions] = await Promise.all([
+    PtPurchase.find({ memberId: req.member._id }).sort({ createdAt: -1 }).populate('trainerId', 'name phone').select('-createdBy').lean(),
+    PtSession.find({ memberId: req.member._id }).sort({ at: -1 }).limit(50).populate('trainerId', 'name').select('at status notes trainerId').lean(),
+  ]);
+  res.json({ success: true, data: { purchases, sessions } });
 });
 
 router.get('/payments', async (req, res) => {

@@ -11,6 +11,7 @@ import { isExport, sendExport } from '../../utils/csv.js';
 import { toRupees } from '../../utils/money.js';
 import { Payment, PAYMENT_MODES } from './payment.model.js';
 import { Subscription } from '../subscriptions/subscription.model.js';
+import { billOf } from './billing.js';
 import { recordPayment, nextReceiptNo } from '../subscriptions/subscription.service.js';
 import { refreshMember } from '../members/member.state.js';
 import { getGym } from '../settings/gym.model.js';
@@ -111,17 +112,18 @@ router.post(
     const refundable = original.amount - (refunded[0]?.total || 0);
     if (req.body.amount > refundable) throw ApiError.badRequest(`Maximum refundable is Rs. ${toRupees(refundable)}`);
 
-    const sub = await Subscription.findById(original.subscriptionId);
-    // Refund on a running membership re-opens the due; on a cancelled one it doesn't.
+    const { Model, id, field } = billOf(original);
+    const sub = await Model.findById(id);
+    // Refund on a running membership / package re-opens the due; on a cancelled one it doesn't.
     const inc = { paidAmount: -req.body.amount, ...(sub.status === 'active' ? { dueAmount: req.body.amount } : {}) };
-    await Subscription.updateOne({ _id: sub._id }, { $inc: inc });
+    await Model.updateOne({ _id: sub._id }, { $inc: inc });
 
     const gym = await getGym();
     const refund = await Payment.create({
       receiptNo: await nextReceiptNo(gym),
       memberId: original.memberId,
       branchId: original.branchId,
-      subscriptionId: original.subscriptionId,
+      [field]: id,
       invoiceId: original.invoiceId,
       type: 'refund',
       amount: req.body.amount,
@@ -144,7 +146,7 @@ router.post(
 
 router.get('/:id/receipt.pdf', permit('payments.read'), async (req, res) => {
   const payment = await findInBranch(req, Payment, req.params.id, { notFound: 'Payment not found' });
-  await payment.populate(['memberId', 'subscriptionId']);
+  await payment.populate(['memberId', 'subscriptionId', 'ptPurchaseId']);
   const pdf = await receiptPdf(payment.toObject(), await getGym());
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${payment.receiptNo.replace(/\//g, '-')}.pdf"`);

@@ -49,6 +49,7 @@ const createBody = z.object({
   password: z.string().min(8).max(100),
   role: z.enum(ROLE_NAMES),
   branchIds: z.array(objectId).default([]),
+  ptCommissionPercent: z.number().min(0).max(100).optional(),
 });
 
 router.post('/', permit('users.write'), validate({ body: createBody }), async (req, res) => {

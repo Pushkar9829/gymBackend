@@ -86,7 +86,8 @@ export function invoicePdf(invoice, { paid = 0, due = 0 } = {}) {
 
 export function receiptPdf(payment, gym) {
   const m = payment.memberId || {};
-  const s = payment.subscriptionId || {};
+  const s = payment.subscriptionId || payment.ptPurchaseId || {};
+  const isPt = Boolean(payment.ptPurchaseId);
   const isRefund = payment.type === 'refund';
   return render({
     content: [
@@ -96,12 +97,14 @@ export function receiptPdf(payment, gym) {
           widths: [140, '*'],
           body: [
             ['Member', `${m.name} (#${m.memberCode})`],
-            ['Membership', s.plan?.name ? `${s.plan.name} (${dmy(s.startDate)} to ${dmy(s.endDate)})` : '-'],
+            isPt
+              ? ['Personal training', s.package?.name ? `${s.package.name} (${s.sessionsTotal} sessions, valid till ${dmy(s.validTo)})` : '-']
+              : ['Membership', s.plan?.name ? `${s.plan.name} (${dmy(s.startDate)} to ${dmy(s.endDate)})` : '-'],
             [isRefund ? 'Amount refunded' : 'Amount received', { text: formatINR(payment.amount), bold: true }],
             ['Mode', String(payment.mode).toUpperCase()],
             ['Reference', payment.reference || '-'],
             ...(isRefund ? [['Reason', payment.note || '-']] : []),
-            ['Balance due on membership', formatINR(s.dueAmount || 0)],
+            [isPt ? 'Balance due on package' : 'Balance due on membership', formatINR(s.dueAmount || 0)],
           ],
         },
         layout: 'lightHorizontalLines',
