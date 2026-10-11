@@ -27,8 +27,10 @@ export const api = () => request(app);
 
 export async function setupDb() {
   if (mongoose.connection.readyState !== 1) await connectDb(process.env.MONGO_URI);
-  await mongoose.connection.db.dropDatabase();
-  await Promise.all(Object.values(mongoose.models).map((m) => m.syncIndexes()));
+  // Empty every collection but keep indexes: rebuilding indexes per test file is very slow.
+  await Promise.all(Object.values(mongoose.models).map((m) => m.init()));
+  const collections = await mongoose.connection.db.collections();
+  await Promise.all(collections.map((c) => c.deleteMany({})));
 
   const gym = await Gym.create({ name: 'Test Gym', taxPercent: 18 });
   const main = await Branch.create({ name: 'Main', code: 'MAIN' });

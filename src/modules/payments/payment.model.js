@@ -27,10 +27,6 @@ paymentSchema.pre('validate', function requireBill() {
   if (!this.subscriptionId === !this.ptPurchaseId) this.invalidate('subscriptionId', 'Payment must belong to a membership or a PT package');
 });
 
-paymentSchema.pre('validate', function requireBill() {
-  if (!this.subscriptionId === !this.ptPurchaseId) this.invalidate('subscriptionId', 'Payment must belong to a membership or a PT package');
-});
-
 paymentSchema.index({ branchId: 1, paidAt: -1 });
 paymentSchema.index({ memberId: 1, paidAt: -1 });
 

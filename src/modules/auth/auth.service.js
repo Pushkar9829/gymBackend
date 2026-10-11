@@ -10,7 +10,8 @@ import { ROLES } from '../../config/permissions.js';
 import { sendEmail } from '../notifications/mailer.js';
 
 const sha256 = (s) => crypto.createHash('sha256').update(s).digest('hex');
-export const hashPassword = (p) => bcrypt.hash(p, 12);
+// Cost 12 in production; cheap in tests (bcryptjs is pure JS and slow).
+export const hashPassword = (p) => bcrypt.hash(p, env.isTest ? 4 : 12);
 
 export const REFRESH_COOKIE = { user: 'gym_rt', member: 'gym_mrt' };
 export const refreshCookieOptions = () => ({
