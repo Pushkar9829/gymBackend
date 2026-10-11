@@ -13,6 +13,7 @@ export const PERMISSIONS = [
   'fitness.read', 'fitness.write',
   'classes.read', 'classes.write', 'classes.book', 'classes.attendance',
   'payroll.manage',
+  'shop.sell', 'shop.manage',
   'users.read', 'users.write',
   'branches.write', 'settings.write',
 ];
@@ -25,7 +26,7 @@ export const ROLES = {
     'payments.read', 'payments.create', 'attendance.read', 'attendance.write',
     'leads.read', 'leads.write', 'expenses.read', 'expenses.write', 'devices.read',
     'pt.read', 'pt.sell', 'pt.log', 'fitness.read',
-    'classes.read', 'classes.book', 'classes.attendance',
+    'classes.read', 'classes.book', 'classes.attendance', 'shop.sell',
   ],
   trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write', 'classes.read', 'classes.attendance'],
 };

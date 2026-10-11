@@ -14,6 +14,7 @@ import { Subscription } from '../subscriptions/subscription.model.js';
 import { Notification } from '../notifications/notification.model.js';
 import { Device } from '../devices/device.model.js';
 import { Branch } from '../branches/branch.model.js';
+import { Sale } from '../shop/shop.model.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -171,8 +172,29 @@ router.get('/pnl', permit('reports.read'), async (req, res) => {
     ]),
   ]);
   const expenseTotal = expenses.reduce((s, e) => s + e.amount, 0);
+  const shopAgg = await Sale.aggregate([
+    { $match: { ...bf, status: 'paid', createdAt: { $gte: from, $lt: toExclusive } } },
+    { $group: { _id: null, total: { $sum: '$total' }, tax: { $sum: '$taxAmount' }, cost: { $sum: '$cost' } } },
+  ]);
+  const shop = shopAgg[0] || { total: 0, tax: 0, cost: 0 };
+  // Shop: revenue counted without GST (collected for the government) minus cost of goods.
+  const shopProfit = shop.total - shop.tax - shop.cost;
   const income = collected - refunded;
-  res.json({ success: true, data: { from: fromDay, to: toDay, income, collected, refunded, expenses: expenseTotal, expensesByCategory: expenses, profit: income - expenseTotal } });
+  res.json({
+    success: true,
+    data: {
+      from: fromDay,
+      to: toDay,
+      income,
+      collected,
+      refunded,
+      shopSales: shop.total,
+      shopProfit,
+      expenses: expenseTotal,
+      expensesByCategory: expenses,
+      profit: income + shopProfit - expenseTotal,
+    },
+  });
 });
 
 router.get('/attendance', permit('reports.read'), async (req, res) => {
