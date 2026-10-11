@@ -1,0 +1,146 @@
+import { Member } from '../modules/members/member.model.js';
+import { Subscription } from '../modules/subscriptions/subscription.model.js';
+import { Lead } from '../modules/leads/lead.model.js';
+import { User } from '../modules/users/user.model.js';
+import { Payment } from '../modules/payments/payment.model.js';
+import { Attendance } from '../modules/attendance/attendance.model.js';
+import { AccessLog } from '../modules/access/accessLog.model.js';
+import { DeviceCommand } from '../modules/devices/device.model.js';
+import { getGym } from '../modules/settings/gym.model.js';
+import { refreshMember } from '../modules/members/member.state.js';
+import { sendMemberEmail, createAlert } from '../modules/notifications/notification.service.js';
+import { sendEmail } from '../modules/notifications/mailer.js';
+import { startOfDay, addDays, ymd, dmy, dayjs, tz } from '../utils/dates.js';
+import { formatINR } from '../utils/money.js';
+import { logger } from '../config/logger.js';
+
+/**
+ * Runs once a day (Render Cron Job, ~00:05 IST). Safe to run more than once:
+ * every step is idempotent (dedupe keys / state hashes).
+ */
+export async function runDailyJob({ now = new Date() } = {}) {
+  const gym = await getGym();
+  const settings = gym.settings || {};
+  const today = startOfDay(now);
+  const report = { members: 0, devicesQueued: 0, reminders: 0, expiredEmails: 0, birthdays: 0, followUpAlerts: 0 };
+
+  // 1. Re-evaluate every member: status (active -> expired, freeze start/end) + device enable/disable.
+  for await (const m of Member.find({ isDeleted: false }).lean().cursor()) {
+    try {
+      await refreshMember(m, { now, settings });
+      report.members += 1;
+    } catch (err) {
+      logger.error({ err, memberId: m._id }, 'daily: member refresh failed');
+    }
+  }
+
+  const emailsOn = settings.sendEmails !== false;
+
+  // 2. Renewal reminders (e.g. 7 / 3 / 1 days before the end date), skipped if already renewed.
+  for (const d of settings.reminderDays || []) {
+    const target = addDays(today, d);
+    const subs = await Subscription.find({ status: 'active', endDate: { $gte: target, $lt: addDays(target, 1) } }).lean();
+    for (const s of subs) {
+      const renewed = await Subscription.exists({ memberId: s.memberId, status: 'active', startDate: { $gt: s.startDate } });
+      if (renewed) continue;
+      const member = await Member.findOne({ _id: s.memberId, isDeleted: false }).lean();
+      if (!member || !emailsOn) continue;
+      const sent = await sendMemberEmail({
+        member,
+        template: 'renewal-reminder',
+        dedupeKey: `renewal-${d}:${s._id}`,
+        subject: `${gym.name}: your membership ends on ${dmy(s.endDate)}`,
+        text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ends on ${dmy(s.endDate)}${d === 0 ? ' (today)' : ` (in ${d} day(s))`}. After that, entry at the gym will not be allowed.\nPlease renew at the reception to continue without a break.\n\n${gym.name}`,
+      });
+      if (sent) report.reminders += 1;
+    }
+  }
+
+  // 3. "Membership expired" email the day after the end date (only when not renewed).
+  const yesterday = addDays(today, -1);
+  const ended = await Subscription.find({ status: 'active', endDate: { $gte: yesterday, $lt: today } }).lean();
+  for (const s of ended) {
+    const renewed = await Subscription.exists({ memberId: s.memberId, status: 'active', startDate: { $gt: s.startDate } });
+    if (renewed || !emailsOn) continue;
+    const member = await Member.findOne({ _id: s.memberId, isDeleted: false }).lean();
+    if (!member) continue;
+    const sent = await sendMemberEmail({
+      member,
+      template: 'membership-expired',
+      dedupeKey: `expired:${s._id}`,
+      subject: `${gym.name}: your membership has expired`,
+      text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ended on ${dmy(s.endDate)}. Gym entry is now disabled.\nRenew at the reception to get access back immediately.\n\n${gym.name}`,
+    });
+    if (sent) report.expiredEmails += 1;
+  }
+
+  // 4. Birthday wishes
+  if (emailsOn) {
+    const md = dayjs(today).tz(tz).format('MM-DD');
+    const bdays = await Member.aggregate([
+      { $match: { isDeleted: false, dob: { $ne: null }, membershipStatus: { $in: ['active', 'frozen'] } } },
+      { $match: { $expr: { $eq: [{ $dateToString: { format: '%m-%d', date: '$dob', timezone: tz } }, md] } } },
+    ]);
+    for (const member of bdays) {
+      const sent = await sendMemberEmail({
+        member,
+        template: 'birthday',
+        dedupeKey: `bday:${member._id}:${dayjs(today).tz(tz).year()}`,
+        subject: `Happy Birthday from ${gym.name}!`,
+        text: `Hi ${member.name},\n\nWishing you a very happy birthday and a strong year ahead!\n\n${gym.name}`,
+      });
+      if (sent) report.birthdays += 1;
+    }
+  }
+
+  // 5. Follow-up alert per branch
+  const due = await Lead.aggregate([
+    { $match: { isDeleted: false, status: { $in: ['new', 'contacted', 'trial'] }, nextFollowUpAt: { $lt: addDays(today, 1) } } },
+    { $group: { _id: '$branchId', n: { $sum: 1 } } },
+  ]);
+  for (const b of due) {
+    const a = await createAlert({
+      branchId: b._id,
+      template: 'follow-ups',
+      subject: `${b.n} lead follow-up(s) due today`,
+      body: 'Open Leads > Follow-ups due',
+      dedupeKey: `followups:${b._id}:${ymd(today)}`,
+    });
+    if (a) report.followUpAlerts += 1;
+  }
+
+  // 6. Housekeeping: old finished device commands
+  await DeviceCommand.deleteMany({ status: { $in: ['done', 'superseded'] }, updatedAt: { $lt: addDays(today, -30) } });
+
+  // 7. Owner summary email for yesterday
+  if (emailsOn) await sendOwnerSummary(gym, yesterday, today);
+
+  logger.info({ report }, 'daily job finished');
+  return report;
+}
+
+async function sendOwnerSummary(gym, from, to) {
+  const owners = await User.find({ role: 'owner', isActive: true }).select('email').lean();
+  if (!owners.length) return;
+  const [collected, checkins, denied, expiring] = await Promise.all([
+    Payment.aggregate([{ $match: { type: 'payment', paidAt: { $gte: from, $lt: to } } }, { $group: { _id: null, v: { $sum: '$amount' } } }]),
+    Attendance.countDocuments({ day: ymd(from) }),
+    AccessLog.countDocuments({ result: 'deny', at: { $gte: from, $lt: to } }),
+    Member.countDocuments({ isDeleted: false, membershipStatus: 'active', membershipEnd: { $gte: to, $lt: addDays(to, 7) } }),
+  ]);
+  const text = [
+    `Daily summary for ${dmy(from)}`,
+    '',
+    `Collections: ${formatINR(collected[0]?.v || 0)}`,
+    `Check-ins: ${checkins}`,
+    `Entries denied: ${denied}`,
+    `Memberships ending in next 7 days: ${expiring}`,
+  ].join('\n');
+  for (const o of owners) {
+    try {
+      await sendEmail({ to: o.email, subject: `${gym.name} - daily summary ${dmy(from)}`, text });
+    } catch (err) {
+      logger.error({ err }, 'owner summary email failed');
+    }
+  }
+}
