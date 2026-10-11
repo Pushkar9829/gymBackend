@@ -151,6 +151,30 @@ router.delete('/:id', permit('members.delete'), async (req, res) => {
   res.json({ success: true });
 });
 
+router.post(
+  '/:id/documents',
+  permit('members.write'),
+  validate({ body: z.object({ name: z.string().trim().min(1).max(80), kind: z.enum(['id-proof', 'medical', 'waiver', 'photo', 'other']).default('other'), url: z.string().url() }) }),
+  async (req, res) => {
+    const member = await loadMember(req, req.params.id);
+    if (member.documents.length >= 20) throw ApiError.badRequest('Maximum 20 documents per member');
+    member.documents.push({ ...req.body, uploadedBy: req.user._id });
+    await member.save();
+    await audit(req, 'member.document.add', { entity: 'Member', entityId: member._id, details: { name: req.body.name, kind: req.body.kind } });
+    res.status(201).json({ success: true, data: member.documents });
+  },
+);
+
+router.delete('/:id/documents/:docId', permit('members.write'), async (req, res) => {
+  const member = await loadMember(req, req.params.id);
+  const doc = member.documents.id(req.params.docId);
+  if (!doc) throw ApiError.notFound('Document not found');
+  doc.deleteOne();
+  await member.save();
+  await audit(req, 'member.document.remove', { entity: 'Member', entityId: member._id, details: { name: doc.name } });
+  res.json({ success: true, data: member.documents });
+});
+
 router.post('/:id/restore', permit('members.delete'), async (req, res) => {
   const member = await loadMember(req, req.params.id, { deleted: true });
   const clash = await Member.findOne({ phone: member.phone, isDeleted: false, _id: { $ne: member._id } }).select('name memberCode').lean();

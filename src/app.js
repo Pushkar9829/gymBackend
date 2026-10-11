@@ -36,6 +36,8 @@ import announcementRoutes from './modules/messaging/announcement.routes.js';
 import ptRoutes from './modules/pt/pt.routes.js';
 import fitnessRoutes from './modules/fitness/fitness.routes.js';
 import { classRouter, portalClassRouter } from './modules/classes/class.routes.js';
+import staffRoutes from './modules/staff/staff.routes.js';
+import publicRoutes from './modules/public/public.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -111,6 +113,8 @@ export function createApp() {
   api.use('/pt', ptRoutes);
   api.use('/fitness', fitnessRoutes);
   api.use('/classes', classRouter);
+  api.use('/staff-attendance', staffRoutes);
+  api.use('/public', publicRoutes);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalClassRouter);

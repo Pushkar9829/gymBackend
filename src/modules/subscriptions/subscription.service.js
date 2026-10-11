@@ -175,6 +175,7 @@ export async function createSubscription({
         maxFreezes: plan.maxFreezes,
         accessStart: plan.accessStart,
         accessEnd: plan.accessEnd,
+        deviceTimezoneId: plan.deviceTimezoneId,
       },
       type: type || (q.everHad ? 'renewal' : 'new'),
       startDate: start,

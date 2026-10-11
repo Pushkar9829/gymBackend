@@ -11,6 +11,8 @@ import { refreshMember } from '../members/member.state.js';
 import { queueRawCommand } from './device.sync.js';
 import { getGym } from '../settings/gym.model.js';
 import { audit } from '../audit/audit.model.js';
+import { User } from '../users/user.model.js';
+import { syncStaffToDevices } from '../staff/staff.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -61,6 +63,10 @@ async function fullSync(device) {
   for await (const m of Member.find({ branchId: device.branchId, isDeleted: false }).lean().cursor()) {
     await refreshMember(m, { settings, devices, force: true });
     count += 1;
+  }
+  // Staff of this branch (and owners) for staff attendance.
+  for (const u of await User.find({ isActive: true, $or: [{ role: 'owner' }, { branchIds: device.branchId }] }).lean()) {
+    await syncStaffToDevices(u, { devices, force: true });
   }
   await Device.updateOne({ _id: device._id }, { lastFullSyncAt: new Date() });
   return count;

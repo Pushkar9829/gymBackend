@@ -22,6 +22,9 @@ const body = z.object({
   joiningFee: paise.optional(),
   taxPercent: z.number().min(0).max(50).nullable().optional(),
   freezeDaysAllowed: z.number().int().min(0).max(365).optional(),
+  accessStart: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM').nullable().optional(),
+  accessEnd: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM').nullable().optional(),
+  deviceTimezoneId: z.number().int().min(1).max(50).optional(),
   maxFreezes: z.number().int().min(0).max(12).optional(),
   branchIds: z.array(objectId).optional(),
   isActive: z.boolean().optional(),
@@ -36,7 +39,10 @@ router.get('/', permit('plans.read'), async (req, res) => {
   res.json({ success: true, data: await Plan.find(filter).sort({ durationUnit: 1, durationValue: 1, price: 1 }).lean() });
 });
 
+const slotOk = (b) => !b.accessStart === !b.accessEnd && (!b.accessStart || b.accessStart < b.accessEnd);
+
 router.post('/', permit('plans.write'), validate({ body }), async (req, res) => {
+  if (!slotOk(req.body)) throw ApiError.badRequest('Set both entry start and end time (start before end)');
   const plan = await Plan.create(req.body);
   await audit(req, 'plan.create', { entity: 'Plan', entityId: plan._id });
   res.status(201).json({ success: true, data: plan });

@@ -27,6 +27,7 @@ const subscriptionSchema = new mongoose.Schema(
       maxFreezes: Number,
       accessStart: String, // HH:MM, time-slot plans (e.g. morning only)
       accessEnd: String,
+      deviceTimezoneId: Number,
     },
     type: { type: String, enum: ['new', 'renewal', 'upgrade'], default: 'new' },
     startDate: { type: Date, required: true }, // start of first day (gym tz)

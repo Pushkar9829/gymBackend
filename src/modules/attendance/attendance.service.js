@@ -5,6 +5,8 @@ import { loadAccess, refreshMember } from '../members/member.state.js';
 import { createAlert } from '../notifications/notification.service.js';
 import { ymd } from '../../utils/dates.js';
 import { logger } from '../../config/logger.js';
+import { User } from '../users/user.model.js';
+import { recordStaffPunch, STAFF_PIN_START } from '../staff/staff.service.js';
 
 /** Upserts today's attendance row. exit=true records check-out instead. */
 export async function markAttendance({ member, at, method, deviceId, userId, exit = false }) {
@@ -78,6 +80,13 @@ export async function processDevicePunch({ device, pin, at, deviceGranted = true
   if (dup) return { duplicate: true };
 
   const code = /^\d+$/.test(pin) ? Number(pin) : null;
+  if (code && code >= STAFF_PIN_START && deviceGranted) {
+    const staff = await User.findOne({ devicePin: code, isActive: true }).lean();
+    if (staff) {
+      await AccessLog.create({ branchId: device.branchId, deviceId: device._id, pin, at, result: 'allow', code: 'STAFF', reason: `Staff: ${staff.name}`, source: 'biometric' });
+      return { staff: true, attendance: await recordStaffPunch({ user: staff, at, method: 'biometric', deviceId: device._id, branchId: device.branchId }) };
+    }
+  }
   const member = code ? await Member.findOne({ memberCode: code, isDeleted: false }).lean() : null;
   const base = { branchId: device.branchId, deviceId: device._id, pin, at, source: 'biometric', deviceEvent: deviceEvent != null ? String(deviceEvent) : undefined };
 

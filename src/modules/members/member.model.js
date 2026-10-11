@@ -19,6 +19,15 @@ const memberSchema = new mongoose.Schema(
     trainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     source: { type: String, default: 'walk-in' },
     notes: String,
+    documents: [
+      {
+        name: { type: String, required: true },
+        kind: { type: String, enum: ['id-proof', 'medical', 'waiver', 'photo', 'other'], default: 'other' },
+        url: { type: String, required: true },
+        uploadedAt: { type: Date, default: Date.now },
+        uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      },
+    ],
     joinedAt: { type: Date, default: Date.now },
 
     // Access block set by staff (overrides any active membership).

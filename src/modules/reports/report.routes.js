@@ -13,6 +13,7 @@ import { Lead } from '../leads/lead.model.js';
 import { Subscription } from '../subscriptions/subscription.model.js';
 import { Notification } from '../notifications/notification.model.js';
 import { Device } from '../devices/device.model.js';
+import { Branch } from '../branches/branch.model.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -191,6 +192,27 @@ router.get('/attendance', permit('reports.read'), async (req, res) => {
     ]),
   ]);
   res.json({ success: true, data: { byDay, byHour, deniedByReason: denied } });
+});
+
+router.get('/branches', permit('reports.read'), async (req, res) => {
+  const { from, toExclusive, fromDay, toDay } = range(req, 30);
+  const branchIds = req.allowedBranchIds === null ? (await Branch.find().select('_id').lean()).map((b) => b._id) : req.allowedBranchIds;
+  const branches = await Branch.find({ _id: { $in: branchIds } }).select('name code').lean();
+  const rows = [];
+  for (const b of branches) {
+    const bf = { branchId: b._id };
+    const [active, joined, collected, refunded, expenses, visits, dues] = await Promise.all([
+      Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: { $in: ['active', 'frozen'] } }),
+      Member.countDocuments({ ...bf, isDeleted: false, createdAt: { $gte: from, $lt: toExclusive } }),
+      sumBy(Payment, { ...bf, type: 'payment', paidAt: { $gte: from, $lt: toExclusive } }),
+      sumBy(Payment, { ...bf, type: 'refund', paidAt: { $gte: from, $lt: toExclusive } }),
+      sumBy(Expense, { ...bf, isDeleted: false, date: { $gte: from, $lt: toExclusive } }),
+      Attendance.countDocuments({ ...bf, day: { $gte: fromDay, $lte: toDay } }),
+      sumBy(Member, { ...bf, isDeleted: false, dueAmount: { $gt: 0 } }, '$dueAmount'),
+    ]);
+    rows.push({ branchId: b._id, name: b.name, activeMembers: active, newMembers: joined, collected, refunded, expenses, profit: collected - refunded - expenses, visits, dues });
+  }
+  res.json({ success: true, data: { from: fromDay, to: toDay, rows } });
 });
 
 router.get('/leads', permit('reports.read'), async (req, res) => {

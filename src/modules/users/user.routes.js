@@ -8,6 +8,7 @@ import { ROLE_NAMES } from '../../config/permissions.js';
 import { User } from './user.model.js';
 import { hashPassword, revokeAllSessions } from '../auth/auth.service.js';
 import { audit } from '../audit/audit.model.js';
+import { syncStaffToDevices } from '../staff/staff.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -58,6 +59,7 @@ router.post('/', permit('users.write'), validate({ body: createBody }), async (r
   const { password, ...rest } = req.body;
   const user = await User.create({ ...rest, passwordHash: await hashPassword(password) });
   await audit(req, 'user.create', { entity: 'User', entityId: user._id, details: { role: user.role } });
+  await syncStaffToDevices(user.toObject());
   res.status(201).json({ success: true, data: user });
 });
 
@@ -78,6 +80,7 @@ router.put('/:id', permit('users.write'), validate({ body: updateBody }), async 
   if (password) user.passwordHash = await hashPassword(password);
   await user.save();
   if (password || req.body.isActive === false) await revokeAllSessions(user._id);
+  await syncStaffToDevices(user.toObject());
   await audit(req, 'user.update', { entity: 'User', entityId: user._id, details: { ...rest, password: password ? 'changed' : undefined } });
   res.json({ success: true, data: user });
 });

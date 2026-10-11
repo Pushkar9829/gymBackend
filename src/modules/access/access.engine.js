@@ -1,4 +1,4 @@
-import { addDays, dmy, ymd, diffDays, parseDay } from '../../utils/dates.js';
+import { addDays, dmy, ymd, diffDays, parseDay, dayjs, tz } from '../../utils/dates.js';
 
 /**
  * Single source of truth for "may this member enter?".
@@ -47,13 +47,15 @@ export function computeAccess({ member, subscriptions = [], settings = {}, now =
   else if (hasCancelledOnly) membershipStatus = 'cancelled';
 
   const base = { membershipStatus, current, window, inGrace, dueAmount: chainDue };
+  const slotPlan = (current || upcoming)?.plan;
+  const timezoneId = slotPlan?.deviceTimezoneId || 1;
   const deny = (code, reason, deviceEnabled = false) => ({
     ...base,
     allowed: false,
     code,
     reason,
     daysLeft: null,
-    device: deviceState(deviceEnabled, window),
+    device: deviceState(deviceEnabled, window, timezoneId),
   });
 
   if (member?.isBlocked) {
@@ -72,6 +74,11 @@ export function computeAccess({ member, subscriptions = [], settings = {}, now =
   }
   if (frozen) return deny('FROZEN', `Membership frozen until ${dmy(frozen.to)}`);
   if (duesBlocked) return deny('DUES', `Payment due Rs. ${(chainDue / 100).toFixed(2)}`);
+  if (slotPlan?.accessStart && slotPlan?.accessEnd) {
+    const t = dayjs(now).tz(tz).format('HH:mm');
+    // Device stays enabled: it enforces the slot through its access time-zone.
+    if (t < slotPlan.accessStart || t >= slotPlan.accessEnd) return deny('OUTSIDE_HOURS', `Your plan allows entry ${slotPlan.accessStart}-${slotPlan.accessEnd}`, true);
+  }
 
   const lastDay = addDays(window.to, -graceDays);
   const daysLeft = Math.max(0, diffDays(now, lastDay));
@@ -83,7 +90,7 @@ export function computeAccess({ member, subscriptions = [], settings = {}, now =
       ? `Grace period - membership ended on ${dmy(lastDay)}`
       : `Welcome! ${daysLeft === 0 ? 'Membership ends today' : `${daysLeft} day(s) left`}`,
     daysLeft,
-    device: deviceState(true, window),
+    device: deviceState(true, window, timezoneId),
   };
 }
 
@@ -110,8 +117,8 @@ function activeFreeze(sub, today) {
   );
 }
 
-function deviceState(enabled, window) {
-  return { enabled: Boolean(enabled && window), validFrom: window?.from || null, validTo: window?.to || null };
+function deviceState(enabled, window, timezoneId = 1) {
+  return { enabled: Boolean(enabled && window), validFrom: window?.from || null, validTo: window?.to || null, timezoneId };
 }
 
-export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES'];
+export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES', 'OUTSIDE_HOURS'];

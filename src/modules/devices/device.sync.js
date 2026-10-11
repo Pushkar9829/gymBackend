@@ -7,7 +7,7 @@ import { ymd } from '../../utils/dates.js';
 const hashState = (s) =>
   crypto
     .createHash('sha1')
-    .update(JSON.stringify([s.pin, s.name, s.enabled, s.validFrom ? ymd(s.validFrom) : null, s.validTo ? ymd(s.validTo) : null]))
+    .update(JSON.stringify([s.pin, s.name, s.enabled, s.validFrom ? ymd(s.validFrom) : null, s.validTo ? ymd(s.validTo) : null, s.timezoneId || 1]))
     .digest('hex');
 
 async function enqueue(device, { memberId, kind, bodies }) {
@@ -40,6 +40,7 @@ export async function syncMemberToDevices(member, access, { force = false, devic
     enabled: Boolean(access.device.enabled),
     validFrom: access.device.validFrom,
     validTo: access.device.validTo,
+    timezoneId: access.device.timezoneId || 1,
   };
   const stateHash = hashState(desired);
   let queued = 0;

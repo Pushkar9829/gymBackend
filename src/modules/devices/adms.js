@@ -29,7 +29,7 @@ export function zkDecodeTime(n) {
 }
 
 /** Command bodies (without the "C:<id>:" prefix) that put a member into the desired state. */
-export function buildUserSyncCommands(device, { pin, name, enabled, validFrom, validTo }) {
+export function buildUserSyncCommands(device, { pin, name, enabled, validFrom, validTo, timezoneId = 1 }) {
   const n = clean(name).slice(0, 24);
   if (device.dialect === 'attendance') {
     const grp = enabled ? device.allowedGroup : device.blockedGroup;
@@ -40,7 +40,7 @@ export function buildUserSyncCommands(device, { pin, name, enabled, validFrom, v
   const end = enabled ? zkEncodeTime(validTo, { endOfDay: true }) : 0;
   return [
     `DATA UPDATE user CardNo=\tPin=${pin}\tPassword=\tGroup=0\tStartTime=${start}\tEndTime=${end}\tName=${n}\tPrivilege=0\tDisable=${enabled ? 0 : 1}\tVerify=0`,
-    `DATA UPDATE userauthorize Pin=${pin}\tAuthorizeTimezoneId=1\tAuthorizeDoorId=${device.doorId || 1}\tDevID=1`,
+    `DATA UPDATE userauthorize Pin=${pin}\tAuthorizeTimezoneId=${timezoneId || 1}\tAuthorizeDoorId=${device.doorId || 1}\tDevID=1`,
   ];
 }
 

@@ -13,6 +13,8 @@ const userSchema = new mongoose.Schema(
     // Trainers: share of the PT package price earned per session (percent).
     ptCommissionPercent: { type: Number, default: 0, min: 0, max: 100 },
     lastLoginAt: Date,
+    // Biometric device user ID for staff attendance (members use their member code).
+    devicePin: { type: Number, unique: true, sparse: true },
   },
   { timestamps: true },
 );
