@@ -40,6 +40,7 @@ import staffRoutes from './modules/staff/staff.routes.js';
 import publicRoutes from './modules/public/public.routes.js';
 import payrollRoutes from './modules/payroll/payroll.routes.js';
 import shopRoutes from './modules/shop/shop.routes.js';
+import equipmentRoutes from './modules/equipment/equipment.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -119,6 +120,7 @@ export function createApp() {
   api.use('/public', publicRoutes);
   api.use('/payroll', payrollRoutes);
   api.use('/shop', shopRoutes);
+  api.use('/equipment', equipmentRoutes);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalClassRouter);
