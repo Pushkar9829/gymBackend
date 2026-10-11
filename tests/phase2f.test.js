@@ -54,8 +54,11 @@ test('staff get a device PIN and are pushed to the device; a staff punch records
   assert.ok(u.devicePin >= 90001);
   assert.ok(await DeviceCommand.exists({ kind: 'STAFF_SYNC', command: new RegExp(`Pin=${u.devicePin}\\t`) }));
 
-  const t1 = dayjs().tz(tz).subtract(3, 'hour').format('YYYY-MM-DD HH:mm:ss');
-  const t2 = dayjs().tz(tz).subtract(1, 'hour').format('YYYY-MM-DD HH:mm:ss');
+  // Both punches on today's date, whatever time the suite runs (just after midnight too).
+  const now = dayjs().tz(tz);
+  const start = now.startOf('day');
+  const t1 = (now.subtract(3, 'hour').isBefore(start) ? start : now.subtract(3, 'hour')).format('YYYY-MM-DD HH:mm:ss');
+  const t2 = now.subtract(1, 'minute').format('YYYY-MM-DD HH:mm:ss');
   for (const [i, t] of [t1, t2].entries()) {
     await api()
       .post('/iclock/cdata?SN=SLOT0001&table=rtlog')

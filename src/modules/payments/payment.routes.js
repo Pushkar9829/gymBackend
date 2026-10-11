@@ -6,7 +6,7 @@ import { validate } from '../../middlewares/validate.js';
 import { branchFilter, findInBranch } from '../../middlewares/branchScope.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { paginate } from '../../utils/pagination.js';
-import { parseDay, addDays } from '../../utils/dates.js';
+import { parseDay, addDays, isFutureDay } from '../../utils/dates.js';
 import { isExport, sendExport } from '../../utils/csv.js';
 import { toRupees } from '../../utils/money.js';
 import { Payment, PAYMENT_MODES } from './payment.model.js';
@@ -79,7 +79,7 @@ router.post(
   }),
   async (req, res) => {
     const sub = await findInBranch(req, Subscription, req.body.subscriptionId, { notFound: 'Membership not found' });
-    if (req.body.paidAt && req.body.paidAt > new Date()) throw ApiError.badRequest('Payment date cannot be in the future');
+    if (req.body.paidAt && isFutureDay(req.body.paidAt)) throw ApiError.badRequest('Payment date cannot be in the future');
     const result = await recordPayment({ sub, ...req.body, user: req.user });
     const access = await refreshMember(sub.memberId);
     await audit(req, 'payment.create', {

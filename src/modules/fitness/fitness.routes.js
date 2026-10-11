@@ -7,6 +7,7 @@ import { ApiError } from '../../utils/ApiError.js';
 import { Exercise, WorkoutPlan, DietPlan, Measurement, MUSCLE_GROUPS } from './fitness.model.js';
 import { DEFAULT_EXERCISES } from './exercises.defaults.js';
 import { loadAccessibleMember } from '../members/trainerScope.js';
+import { asGymDay, isFutureDay } from '../../utils/dates.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -160,8 +161,8 @@ router.get('/measurements', permit('fitness.read'), async (req, res) => {
 });
 router.post('/measurements', permit('fitness.write'), validate({ body: measurementBody.extend({ memberId: objectId }) }), async (req, res) => {
   const member = await loadAccessibleMember(req, req.body.memberId);
-  if (req.body.date > new Date()) throw ApiError.badRequest('Date cannot be in the future');
-  res.status(201).json({ success: true, data: await Measurement.create({ ...req.body, memberId: member._id, recordedBy: req.user._id }) });
+  if (isFutureDay(req.body.date)) throw ApiError.badRequest('Date cannot be in the future');
+  res.status(201).json({ success: true, data: await Measurement.create({ ...req.body, date: asGymDay(req.body.date), memberId: member._id, recordedBy: req.user._id }) });
 });
 router.delete('/measurements/:id', permit('fitness.write'), async (req, res) => {
   const m = await Measurement.findById(req.params.id);

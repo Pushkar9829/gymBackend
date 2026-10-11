@@ -16,6 +16,7 @@ import { PtPurchase, PtSession } from '../pt/pt.model.js';
 import { WorkoutPlan, DietPlan, Measurement } from '../fitness/fitness.model.js';
 import { measurementBody } from '../fitness/fitness.routes.js';
 import { validate } from '../../middlewares/validate.js';
+import { asGymDay, isFutureDay } from '../../utils/dates.js';
 
 // Member-facing API (PWA). Everything is scoped to the logged-in member.
 const router = Router();
@@ -72,8 +73,8 @@ router.get('/fitness', async (req, res) => {
 
 // Members can log their own weight / measurements.
 router.post('/measurements', validate({ body: measurementBody.omit({ photos: true }) }), async (req, res) => {
-  if (req.body.date > new Date()) throw ApiError.badRequest('Date cannot be in the future');
-  res.status(201).json({ success: true, data: await Measurement.create({ ...req.body, memberId: req.member._id }) });
+  if (isFutureDay(req.body.date)) throw ApiError.badRequest('Date cannot be in the future');
+  res.status(201).json({ success: true, data: await Measurement.create({ ...req.body, date: asGymDay(req.body.date), memberId: req.member._id }) });
 });
 
 router.get('/payments', async (req, res) => {

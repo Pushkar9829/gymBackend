@@ -1,6 +1,7 @@
 import rateLimit from 'express-rate-limit';
 
-const skip = () => process.env.NODE_ENV === 'test';
+// Off in automated tests (DISABLE_RATE_LIMIT is only for local E2E runs, never production).
+const skip = () => process.env.NODE_ENV === 'test' || (process.env.DISABLE_RATE_LIMIT === '1' && process.env.NODE_ENV !== 'production');
 
 export const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,

@@ -23,7 +23,7 @@ const enquiryLimiter = rateLimit({
   limit: 10,
   standardHeaders: true,
   legacyHeaders: false,
-  skip: () => process.env.NODE_ENV === 'test',
+  skip: () => process.env.NODE_ENV === 'test' || (process.env.DISABLE_RATE_LIMIT === '1' && process.env.NODE_ENV !== 'production'),
   message: { success: false, message: 'Too many enquiries from this network. Please call us instead.' },
 });
 
