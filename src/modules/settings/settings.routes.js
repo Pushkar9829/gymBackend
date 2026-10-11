@@ -31,6 +31,8 @@ const schema = z
         blockOnDues: z.boolean(),
         reminderDays: z.array(z.number().int().min(0).max(60)).max(5),
         sendEmails: z.boolean(),
+        channels: z.object({ sms: z.boolean(), whatsapp: z.boolean() }).partial(),
+        memberOtpLogin: z.boolean(),
       })
       .partial(),
   })
@@ -41,7 +43,11 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
   const before = { ...gym.settings.toObject() };
   const { settings, ...rest } = req.body;
   Object.assign(gym, rest);
-  if (settings) Object.assign(gym.settings, settings);
+  if (settings) {
+    const { channels, ...rest } = settings;
+    Object.assign(gym.settings, rest);
+    if (channels) Object.assign(gym.settings.channels, channels);
+  }
   await gym.save();
   await audit(req, 'settings.update', { entity: 'Gym', entityId: gym._id, details: req.body });
 

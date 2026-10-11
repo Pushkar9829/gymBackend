@@ -2,7 +2,7 @@ import mongoose from 'mongoose';
 
 const notificationSchema = new mongoose.Schema(
   {
-    channel: { type: String, enum: ['email', 'inapp'], required: true },
+    channel: { type: String, enum: ['email', 'inapp', 'sms', 'whatsapp'], required: true },
     template: { type: String, required: true },
     memberId: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' },
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch' },

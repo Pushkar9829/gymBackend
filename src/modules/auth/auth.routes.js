@@ -6,6 +6,7 @@ import { requireStaff, requireMember } from '../../middlewares/auth.js';
 import { User } from '../users/user.model.js';
 import { Member } from '../members/member.model.js';
 import * as auth from './auth.service.js';
+import { sendMemberOtp, verifyMemberOtp } from './otp.service.js';
 
 const router = Router();
 const meta = (req) => ({ userAgent: req.get('user-agent'), ip: req.ip });
@@ -68,6 +69,34 @@ router.post(
     res.json({ success: true, message: 'Password updated. Please log in again.' });
   },
 );
+
+const phoneSchema = z.string().trim().regex(/^\+?\d{10,13}$/, 'Enter a valid phone number');
+router.post('/member/otp/send', authLimiter, validate({ body: z.object({ phone: phoneSchema }) }), async (req, res) => {
+  await sendMemberOtp(req.body.phone);
+  res.json({ success: true, message: 'If the number is registered, a code has been sent' });
+});
+router.post(
+  '/member/otp/verify',
+  authLimiter,
+  validate({ body: z.object({ phone: phoneSchema, otp: z.string().regex(/^\d{6}$/, 'Enter the 6-digit code') }) }),
+  async (req, res) => {
+    const member = await verifyMemberOtp(req.body.phone, req.body.otp);
+    sendSession(res, 'member', await auth.memberSession(member, meta(req)));
+  },
+);
+
+// Staff: devices / browsers currently logged in
+router.get('/sessions', requireStaff, async (req, res) => {
+  res.json({ success: true, data: await auth.listSessions(req.user._id, req.cookies?.[auth.REFRESH_COOKIE.user]) });
+});
+router.post('/sessions/:id/revoke', requireStaff, async (req, res) => {
+  await auth.revokeSession(req.user._id, req.params.id);
+  res.json({ success: true });
+});
+router.post('/sessions/revoke-others', requireStaff, async (req, res) => {
+  await auth.revokeOtherSessions(req.user._id, req.cookies?.[auth.REFRESH_COOKIE.user]);
+  res.json({ success: true });
+});
 
 router.get('/me', requireStaff, (req, res) => res.json({ success: true, data: { user: auth.publicUser(req.user) } }));
 

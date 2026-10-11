@@ -9,6 +9,7 @@ import { Payment } from '../payments/payment.model.js';
 import { Subscription } from '../subscriptions/subscription.model.js';
 import { invoicePdf, receiptPdf } from '../invoices/invoice.pdf.js';
 import { sendMemberEmail } from './notification.service.js';
+import { notifyMember } from '../messaging/messaging.service.js';
 
 /**
  * Runs email work without delaying the API response. Failures are only logged.
@@ -28,9 +29,11 @@ async function enabledGym() {
 }
 
 export async function sendWelcomeEmail(memberId) {
-  const gym = await enabledGym();
-  const member = gym && (await Member.findById(memberId).lean());
+  const member = await Member.findById(memberId).lean();
   if (!member) return;
+  await notifyMember({ member, template: 'welcome', vars: { memberCode: member.memberCode }, dedupeKey: `welcome:${member._id}` });
+  const gym = await enabledGym();
+  if (!gym) return;
   await sendMemberEmail({
     member,
     template: 'welcome',
@@ -75,10 +78,19 @@ export async function sendInvoiceEmail(invoiceId) {
 }
 
 export async function sendReceiptEmail(paymentId) {
-  const gym = await enabledGym();
-  const payment = gym && (await Payment.findById(paymentId).populate(['memberId', 'subscriptionId']).lean());
-  if (!payment?.memberId?.email) return;
+  const payment = await Payment.findById(paymentId).populate(['memberId', 'subscriptionId']).lean();
+  if (!payment?.memberId) return;
   const isRefund = payment.type === 'refund';
+  if (!isRefund) {
+    await notifyMember({
+      member: payment.memberId,
+      template: 'payment_received',
+      vars: { amount: formatINR(payment.amount), receipt: payment.receiptNo },
+      dedupeKey: `receipt:${payment._id}`,
+    });
+  }
+  const gym = await enabledGym();
+  if (!gym || !payment.memberId.email) return;
   const pdf = await receiptPdf(payment, gym);
   await sendMemberEmail({
     member: payment.memberId,

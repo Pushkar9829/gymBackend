@@ -79,11 +79,34 @@ export async function memberLogin({ phone, password }, meta) {
   if (!member || !member.passwordHash || !(await bcrypt.compare(password, member.passwordHash))) {
     throw ApiError.unauthorized('Invalid phone or password');
   }
+  return memberSession(member, meta);
+}
+
+export async function memberSession(member, meta) {
   return {
     accessToken: signAccess(member._id, 'member'),
     refreshToken: await issueRefresh(member._id, 'member', meta),
     member: publicMember(member),
   };
+}
+
+/** Active sessions (refresh tokens) of a staff user; `current` marks the one making the request. */
+export async function listSessions(subjectId, currentRaw) {
+  const currentHash = currentRaw ? sha256(currentRaw) : null;
+  const rows = await RefreshToken.find({ subjectId, revokedAt: null, expiresAt: { $gt: new Date() } })
+    .sort({ createdAt: -1 })
+    .select('userAgent ip createdAt tokenHash')
+    .lean();
+  return rows.map(({ tokenHash, ...r }) => ({ ...r, current: tokenHash === currentHash }));
+}
+
+export async function revokeSession(subjectId, sessionId) {
+  await RefreshToken.updateOne({ _id: sessionId, subjectId }, { revokedAt: new Date() });
+}
+
+export async function revokeOtherSessions(subjectId, currentRaw) {
+  const keep = currentRaw ? sha256(currentRaw) : null;
+  await RefreshToken.updateMany({ subjectId, revokedAt: null, tokenHash: { $ne: keep } }, { revokedAt: new Date() });
 }
 
 /** Rotates the refresh token. Re-use of a revoked token revokes the whole family for that subject. */

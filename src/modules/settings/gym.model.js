@@ -19,6 +19,13 @@ const gymSchema = new mongoose.Schema(
       blockOnDues: { type: Boolean, default: false },
       reminderDays: { type: [Number], default: [7, 3, 1] },
       sendEmails: { type: Boolean, default: true },
+      // SMS / WhatsApp: off until a provider is configured.
+      channels: {
+        sms: { type: Boolean, default: false },
+        whatsapp: { type: Boolean, default: false },
+      },
+      // Members can log in to the app with a one-time code sent by SMS/WhatsApp.
+      memberOtpLogin: { type: Boolean, default: true },
     },
   },
   { timestamps: true },

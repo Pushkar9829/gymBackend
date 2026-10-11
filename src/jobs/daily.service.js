@@ -10,6 +10,7 @@ import { getGym } from '../modules/settings/gym.model.js';
 import { refreshMember } from '../modules/members/member.state.js';
 import { sendMemberEmail, createAlert } from '../modules/notifications/notification.service.js';
 import { sendEmail } from '../modules/notifications/mailer.js';
+import { notifyMember } from '../modules/messaging/messaging.service.js';
 import { startOfDay, addDays, ymd, dmy, dayjs, tz } from '../utils/dates.js';
 import { formatINR } from '../utils/money.js';
 import { logger } from '../config/logger.js';
@@ -35,6 +36,12 @@ export async function runDailyJob({ now = new Date() } = {}) {
   }
 
   const emailsOn = settings.sendEmails !== false;
+  // Email (if enabled) + SMS/WhatsApp (channels switched on in settings). Returns true if anything was sent.
+  const tell = async ({ member, email, message }) => {
+    const mail = emailsOn ? await sendMemberEmail({ member, ...email }) : null;
+    const msgs = await notifyMember({ member, gym, ...message });
+    return Boolean(mail || msgs.length);
+  };
 
   // 2. Renewal reminders (e.g. 7 / 3 / 1 days before the end date), skipped if already renewed.
   for (const d of settings.reminderDays || []) {
@@ -44,53 +51,63 @@ export async function runDailyJob({ now = new Date() } = {}) {
       const renewed = await Subscription.exists({ memberId: s.memberId, status: 'active', startDate: { $gt: s.startDate } });
       if (renewed) continue;
       const member = await Member.findOne({ _id: s.memberId, isDeleted: false }).lean();
-      if (!member || !emailsOn) continue;
-      const sent = await sendMemberEmail({
+      if (!member) continue;
+      const key = `renewal-${d}:${s._id}`;
+      const sent = await tell({
         member,
-        template: 'renewal-reminder',
-        dedupeKey: `renewal-${d}:${s._id}`,
-        subject: `${gym.name}: your membership ends on ${dmy(s.endDate)}`,
-        text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ends on ${dmy(s.endDate)}${d === 0 ? ' (today)' : ` (in ${d} day(s))`}. After that, entry at the gym will not be allowed.\nPlease renew at the reception to continue without a break.\n\n${gym.name}`,
+        email: {
+          template: 'renewal-reminder',
+          dedupeKey: key,
+          subject: `${gym.name}: your membership ends on ${dmy(s.endDate)}`,
+          text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ends on ${dmy(s.endDate)}${d === 0 ? ' (today)' : ` (in ${d} day(s))`}. After that, entry at the gym will not be allowed.\nPlease renew at the reception or in the member app to continue without a break.\n\n${gym.name}`,
+        },
+        message: { template: 'renewal_reminder', vars: { plan: s.plan.name, date: dmy(s.endDate) }, dedupeKey: key },
       });
       if (sent) report.reminders += 1;
     }
   }
 
-  // 3. "Membership expired" email the day after the end date (only when not renewed).
+  // 3. "Membership expired" message the day after the end date (only when not renewed).
   const yesterday = addDays(today, -1);
   const ended = await Subscription.find({ status: 'active', endDate: { $gte: yesterday, $lt: today } }).lean();
   for (const s of ended) {
     const renewed = await Subscription.exists({ memberId: s.memberId, status: 'active', startDate: { $gt: s.startDate } });
-    if (renewed || !emailsOn) continue;
+    if (renewed) continue;
     const member = await Member.findOne({ _id: s.memberId, isDeleted: false }).lean();
     if (!member) continue;
-    const sent = await sendMemberEmail({
+    const key = `expired:${s._id}`;
+    const sent = await tell({
       member,
-      template: 'membership-expired',
-      dedupeKey: `expired:${s._id}`,
-      subject: `${gym.name}: your membership has expired`,
-      text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ended on ${dmy(s.endDate)}. Gym entry is now disabled.\nRenew at the reception to get access back immediately.\n\n${gym.name}`,
+      email: {
+        template: 'membership-expired',
+        dedupeKey: key,
+        subject: `${gym.name}: your membership has expired`,
+        text: `Hi ${member.name},\n\nYour ${s.plan.name} membership ended on ${dmy(s.endDate)}. Gym entry is now disabled.\nRenew at the reception or in the member app to get access back immediately.\n\n${gym.name}`,
+      },
+      message: { template: 'membership_expired', vars: { date: dmy(s.endDate) }, dedupeKey: key },
     });
     if (sent) report.expiredEmails += 1;
   }
 
   // 4. Birthday wishes
-  if (emailsOn) {
-    const md = dayjs(today).tz(tz).format('MM-DD');
-    const bdays = await Member.aggregate([
-      { $match: { isDeleted: false, dob: { $ne: null }, membershipStatus: { $in: ['active', 'frozen'] } } },
-      { $match: { $expr: { $eq: [{ $dateToString: { format: '%m-%d', date: '$dob', timezone: tz } }, md] } } },
-    ]);
-    for (const member of bdays) {
-      const sent = await sendMemberEmail({
-        member,
+  const md = dayjs(today).tz(tz).format('MM-DD');
+  const bdays = await Member.aggregate([
+    { $match: { isDeleted: false, dob: { $ne: null }, membershipStatus: { $in: ['active', 'frozen'] } } },
+    { $match: { $expr: { $eq: [{ $dateToString: { format: '%m-%d', date: '$dob', timezone: tz } }, md] } } },
+  ]);
+  for (const member of bdays) {
+    const key = `bday:${member._id}:${dayjs(today).tz(tz).year()}`;
+    const sent = await tell({
+      member,
+      email: {
         template: 'birthday',
-        dedupeKey: `bday:${member._id}:${dayjs(today).tz(tz).year()}`,
+        dedupeKey: key,
         subject: `Happy Birthday from ${gym.name}!`,
         text: `Hi ${member.name},\n\nWishing you a very happy birthday and a strong year ahead!\n\n${gym.name}`,
-      });
-      if (sent) report.birthdays += 1;
-    }
+      },
+      message: { template: 'birthday', dedupeKey: key },
+    });
+    if (sent) report.birthdays += 1;
   }
 
   // 5. Follow-up alert per branch

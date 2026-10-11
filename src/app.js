@@ -32,6 +32,7 @@ import auditRoutes from './modules/audit/audit.routes.js';
 import uploadRoutes from './modules/uploads/upload.routes.js';
 import portalRoutes from './modules/portal/portal.routes.js';
 import couponRoutes from './modules/coupons/coupon.routes.js';
+import announcementRoutes from './modules/messaging/announcement.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -91,6 +92,7 @@ export function createApp() {
   api.use('/audit', auditRoutes);
   api.use('/uploads', uploadRoutes);
   api.use('/coupons', couponRoutes);
+  api.use('/announcements', announcementRoutes);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalRoutes);
