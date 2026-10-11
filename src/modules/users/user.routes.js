@@ -4,7 +4,7 @@ import mongoose from 'mongoose';
 import { requireStaff, permit } from '../../middlewares/auth.js';
 import { validate } from '../../middlewares/validate.js';
 import { ApiError } from '../../utils/ApiError.js';
-import { ROLE_NAMES } from '../../config/permissions.js';
+import { ROLE_NAMES, can } from '../../config/permissions.js';
 import { User } from './user.model.js';
 import { hashPassword, revokeAllSessions } from '../auth/auth.service.js';
 import { audit } from '../audit/audit.model.js';
@@ -32,7 +32,7 @@ function assertCanAssign(req, { role, branchIds }) {
 router.get('/', permit('users.read'), async (req, res) => {
   const filter = { ...scopeFilter(req) };
   if (req.query.role) filter.role = String(req.query.role);
-  const users = await User.find(filter).sort({ name: 1 }).lean();
+  const users = await User.find(filter).select(can(req.user.role, 'payroll.manage') ? '' : '-salary').sort({ name: 1 }).lean();
   res.json({ success: true, data: users });
 });
 
@@ -51,10 +51,12 @@ const createBody = z.object({
   role: z.enum(ROLE_NAMES),
   branchIds: z.array(objectId).default([]),
   ptCommissionPercent: z.number().min(0).max(100).optional(),
+  salary: z.object({ type: z.enum(['monthly', 'per-day']), amount: z.number().int().min(0) }).optional(),
 });
 
 router.post('/', permit('users.write'), validate({ body: createBody }), async (req, res) => {
   assertCanAssign(req, req.body);
+  if (req.body.salary && !can(req.user.role, 'payroll.manage')) throw ApiError.forbidden('Only payroll managers can set salaries');
   if (req.body.role !== 'owner' && !req.body.branchIds.length) throw ApiError.badRequest('Assign at least one branch');
   const { password, ...rest } = req.body;
   const user = await User.create({ ...rest, passwordHash: await hashPassword(password) });
@@ -75,6 +77,7 @@ router.put('/:id', permit('users.write'), validate({ body: updateBody }), async 
     throw ApiError.badRequest('You cannot change your own role or deactivate yourself');
   }
   assertCanAssign(req, { role: req.body.role, branchIds: req.body.branchIds });
+  if (req.body.salary && !can(req.user.role, 'payroll.manage')) throw ApiError.forbidden('Only payroll managers can set salaries');
   const { password, ...rest } = req.body;
   Object.assign(user, rest);
   if (password) user.passwordHash = await hashPassword(password);

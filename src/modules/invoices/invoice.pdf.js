@@ -10,7 +10,7 @@ const printer = new PdfPrinter({
   Helvetica: { normal: 'Helvetica', bold: 'Helvetica-Bold', italics: 'Helvetica-Oblique', bolditalics: 'Helvetica-BoldOblique' },
 });
 
-function render(docDefinition) {
+export function render(docDefinition) {
   return new Promise((resolve, reject) => {
     const doc = printer.createPdfKitDocument({ defaultStyle: { font: 'Helvetica', fontSize: 10 }, pageMargins: [40, 40, 40, 50], ...docDefinition });
     const chunks = [];
@@ -21,7 +21,7 @@ function render(docDefinition) {
   });
 }
 
-const header = (seller, title, number, date) => [
+export const header = (seller, title, number, date) => [
   {
     columns: [
       [

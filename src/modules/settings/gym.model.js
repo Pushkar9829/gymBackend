@@ -26,6 +26,10 @@ const gymSchema = new mongoose.Schema(
       },
       // Members can log in to the app with a one-time code sent by SMS/WhatsApp.
       memberOtpLogin: { type: Boolean, default: true },
+      payroll: {
+        weeklyOff: { type: [Number], default: [0] }, // 0 = Sunday
+        prorateByAttendance: { type: Boolean, default: true },
+      },
     },
   },
   { timestamps: true },

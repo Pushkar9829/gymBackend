@@ -12,6 +12,7 @@ export const PERMISSIONS = [
   'pt.read', 'pt.sell', 'pt.log', 'pt.manage',
   'fitness.read', 'fitness.write',
   'classes.read', 'classes.write', 'classes.book', 'classes.attendance',
+  'payroll.manage',
   'users.read', 'users.write',
   'branches.write', 'settings.write',
 ];

@@ -15,6 +15,11 @@ const userSchema = new mongoose.Schema(
     lastLoginAt: Date,
     // Biometric device user ID for staff attendance (members use their member code).
     devicePin: { type: Number, unique: true, sparse: true },
+    // Payroll: monthly salary or per-day rate (paise). Empty = not on payroll.
+    salary: {
+      type: { type: String, enum: ['monthly', 'per-day'], default: 'monthly' },
+      amount: { type: Number, default: 0, min: 0 },
+    },
   },
   { timestamps: true },
 );

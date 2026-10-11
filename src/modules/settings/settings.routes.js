@@ -33,6 +33,7 @@ const schema = z
         sendEmails: z.boolean(),
         channels: z.object({ sms: z.boolean(), whatsapp: z.boolean() }).partial(),
         memberOtpLogin: z.boolean(),
+        payroll: z.object({ weeklyOff: z.array(z.number().int().min(0).max(6)).max(3), prorateByAttendance: z.boolean() }).partial(),
       })
       .partial(),
   })
@@ -44,9 +45,10 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
   const { settings, ...rest } = req.body;
   Object.assign(gym, rest);
   if (settings) {
-    const { channels, ...rest } = settings;
+    const { channels, payroll, ...rest } = settings;
     Object.assign(gym.settings, rest);
     if (channels) Object.assign(gym.settings.channels, channels);
+    if (payroll) Object.assign(gym.settings.payroll, payroll);
   }
   await gym.save();
   await audit(req, 'settings.update', { entity: 'Gym', entityId: gym._id, details: req.body });
