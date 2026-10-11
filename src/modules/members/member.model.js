@@ -7,6 +7,8 @@ const memberSchema = new mongoose.Schema(
     branchId: { type: mongoose.Schema.Types.ObjectId, ref: 'Branch', required: true },
     // Numeric code; also used as the biometric device user ID (PIN).
     memberCode: { type: Number, required: true, unique: true },
+    // RFID card number (written to biometric devices; tap to check in at reception).
+    cardNo: { type: String, trim: true, unique: true, sparse: true },
     name: { type: String, required: true, trim: true },
     phone: { type: String, required: true, trim: true },
     email: { type: String, lowercase: true, trim: true },

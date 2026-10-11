@@ -43,6 +43,7 @@ const memberBody = z.object({
   healthNotes: optionalStr(1000),
   trainerId: objectId.optional().nullable(),
   companyId: objectId.optional().nullable(),
+  cardNo: z.string().trim().regex(/^\d{4,20}$/, 'Card number must be 4-20 digits').optional().nullable().or(z.literal('').transform(() => null)),
   source: optionalStr(40),
   notes: optionalStr(1000),
   joinedAt: z.coerce.date().optional(),

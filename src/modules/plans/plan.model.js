@@ -18,6 +18,8 @@ const planSchema = new mongoose.Schema(
     deviceTimezoneId: { type: Number, default: 1, min: 1, max: 50 },
     // Family / couple plans: one purchase covers up to this many members (1 = individual).
     maxMembers: { type: Number, default: 1, min: 1, max: 10 },
+    // Razorpay plan ids created for autopay (one per recurring amount).
+    razorpayPlans: [{ id: String, amount: Number, _id: false }],
     // Empty = available in all branches
     branchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
     isActive: { type: Boolean, default: true },

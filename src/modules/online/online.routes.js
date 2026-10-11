@@ -15,6 +15,8 @@ import { Plan } from '../plans/plan.model.js';
 import { getGym } from '../settings/gym.model.js';
 import { quoteSubscription } from '../subscriptions/subscription.service.js';
 import { audit } from '../audit/audit.model.js';
+import { Autopay, startAutopay, cancelAutopay, handleSubscriptionEvent } from './autopay.js';
+import { Member } from '../members/member.model.js';
 
 const objectId = z.string().refine((v) => mongoose.isValidObjectId(v), 'Invalid id');
 const checkoutPayload = (op, member, gym) => ({
@@ -79,6 +81,22 @@ portalPayRouter.post(
   },
 );
 
+portalPayRouter.get('/autopay', async (req, res) => {
+  const data = await Autopay.findOne({ memberId: req.member._id }).sort({ createdAt: -1 }).populate('planId', 'name durationValue durationUnit').lean();
+  res.json({ success: true, data });
+});
+
+portalPayRouter.post('/autopay', validate({ body: z.object({ planId: objectId }) }), async (req, res) => {
+  const a = await startAutopay({ member: req.member, planId: req.body.planId });
+  res.status(201).json({ success: true, data: { shortUrl: a.shortUrl, amount: a.amount } });
+});
+
+portalPayRouter.post('/autopay/cancel', async (req, res) => {
+  const a = await Autopay.findOne({ memberId: req.member._id, status: { $in: ['created', 'authenticated', 'active', 'pending', 'halted', 'paused'] } });
+  if (!a) throw ApiError.notFound('No active autopay');
+  res.json({ success: true, data: await cancelAutopay(a) });
+});
+
 /* ---------------- Staff (/api/v1/online-payments) ---------------- */
 export const staffOnlineRouter = Router();
 staffOnlineRouter.use(requireStaff);
@@ -97,6 +115,27 @@ staffOnlineRouter.post('/link', permit('payments.create'), validate({ body: z.ob
   res.status(201).json({ success: true, data: { shortUrl: op.shortUrl, amount: op.amount, onlinePaymentId: op._id } });
 });
 
+staffOnlineRouter.get('/autopay', permit('payments.read'), async (req, res) => {
+  const filter = { ...branchFilter(req) };
+  if (req.query.memberId && mongoose.isValidObjectId(req.query.memberId)) filter.memberId = req.query.memberId;
+  const data = await Autopay.find(filter).sort({ createdAt: -1 }).limit(200).populate('memberId', 'name memberCode').populate('planId', 'name').lean();
+  res.json({ success: true, data });
+});
+
+staffOnlineRouter.post('/autopay', permit('payments.create'), validate({ body: z.object({ memberId: objectId, planId: objectId }) }), async (req, res) => {
+  const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found', extra: { isDeleted: false } });
+  const a = await startAutopay({ member, planId: req.body.planId, user: req.user });
+  await audit(req, 'autopay.create', { entity: 'Member', entityId: member._id, branchId: member.branchId, details: { planId: req.body.planId, amount: a.amount } });
+  res.status(201).json({ success: true, data: { shortUrl: a.shortUrl, amount: a.amount, autopayId: a._id } });
+});
+
+staffOnlineRouter.post('/autopay/:id/cancel', permit('payments.create'), async (req, res) => {
+  const a = await findInBranch(req, Autopay, req.params.id, { notFound: 'Autopay not found' });
+  const r = await cancelAutopay(a);
+  await audit(req, 'autopay.cancel', { entity: 'Member', entityId: a.memberId, branchId: a.branchId });
+  res.json({ success: true, data: r });
+});
+
 /* ---------------- Razorpay webhook (/api/webhooks/razorpay) — raw body ---------------- */
 export const webhookRouter = Router();
 webhookRouter.post('/razorpay', express.raw({ type: '*/*', limit: '1mb' }), async (req, res) => {
@@ -108,7 +147,9 @@ webhookRouter.post('/razorpay', express.raw({ type: '*/*', limit: '1mb' }), asyn
   const evt = JSON.parse(raw);
   const payment = evt.payload?.payment?.entity;
   try {
-    if (evt.event === 'payment.captured' && payment?.order_id) {
+    if (await handleSubscriptionEvent(evt)) {
+      // autopay (subscription.*) handled
+    } else if (evt.event === 'payment.captured' && payment?.order_id) {
       const op = await OnlinePayment.findOne({ orderId: payment.order_id });
       if (op) await completeOnlinePayment({ op, gatewayPaymentId: payment.id, amount: payment.amount });
     } else if (evt.event === 'payment_link.paid') {

@@ -28,8 +28,9 @@ router.post(
         qr: z.string().max(200).optional(),
         memberId: z.string().refine((v) => mongoose.isValidObjectId(v), 'Invalid id').optional(),
         memberCode: z.number().int().optional(),
+        cardNo: z.string().trim().regex(/^\d{4,20}$/).optional(),
       })
-      .refine((b) => b.qr || b.memberId || b.memberCode, 'Scan a QR code or choose a member'),
+      .refine((b) => b.qr || b.memberId || b.memberCode || b.cardNo, 'Scan a QR code, tap a card or choose a member'),
   }),
   async (req, res) => {
     let filter;
@@ -39,11 +40,14 @@ router.post(
       if (!code) throw ApiError.badRequest('Invalid or fake QR code');
       filter = { memberCode: code };
       method = 'qr';
+    } else if (req.body.cardNo) {
+      filter = { cardNo: req.body.cardNo };
+      method = 'manual';
     } else if (req.body.memberId) filter = { _id: req.body.memberId };
     else filter = { memberCode: req.body.memberCode };
 
     const member = await Member.findOne({ ...filter, isDeleted: false }).lean();
-    if (!member) throw ApiError.notFound('Member not found');
+    if (!member) throw ApiError.notFound(req.body.cardNo ? 'Unknown card' : 'Member not found');
     assertBranchAccess(req, member.branchId);
     const result = await staffCheckIn({ member, method, user: req.user });
     res.json({
