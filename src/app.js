@@ -31,6 +31,8 @@ import notificationRoutes from './modules/notifications/notification.routes.js';
 import auditRoutes from './modules/audit/audit.routes.js';
 import uploadRoutes from './modules/uploads/upload.routes.js';
 import portalRoutes from './modules/portal/portal.routes.js';
+import couponRoutes from './modules/coupons/coupon.routes.js';
+import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
 export function createApp() {
@@ -42,6 +44,8 @@ export function createApp() {
 
   // Biometric devices: plain-text protocol, no CORS/JSON. Mounted before JSON parsing.
   app.use('/iclock', iclockRoutes);
+  // Payment gateway webhooks need the raw body for signature checks.
+  app.use('/api/webhooks', webhookRouter);
 
   app.use(helmet());
   app.use(
@@ -86,6 +90,9 @@ export function createApp() {
   api.use('/notifications', notificationRoutes);
   api.use('/audit', auditRoutes);
   api.use('/uploads', uploadRoutes);
+  api.use('/coupons', couponRoutes);
+  api.use('/online-payments', staffOnlineRouter);
+  api.use('/me', portalPayRouter);
   api.use('/me', portalRoutes);
   app.use('/api/v1', api);
 

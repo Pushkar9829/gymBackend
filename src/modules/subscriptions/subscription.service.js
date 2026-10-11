@@ -11,6 +11,8 @@ import { Payment } from '../payments/payment.model.js';
 import { getGym } from '../settings/gym.model.js';
 import { refreshMember } from '../members/member.state.js';
 import { inBackground, sendWelcomeEmail, sendInvoiceEmail } from '../notifications/emails.js';
+import { evaluateCoupon, consumeCoupon } from '../coupons/coupon.service.js';
+import { Coupon } from '../coupons/coupon.model.js';
 
 /** Last valid day (inclusive) for a plan starting on `start`. */
 export function computeEndDate(start, plan) {
@@ -97,9 +99,41 @@ export async function recordPayment({ sub, amount, mode, reference, note, paidAt
 }
 
 /**
+ * Price breakdown for a member buying a plan (used by staff, the portal and online payments).
+ * Joining fee applies only to a member's first ever membership.
+ */
+export async function quoteSubscription({ member, plan, discount = 0, waiveJoiningFee = false, couponCode, gym }) {
+  gym = gym || (await getGym());
+  const everHad = await Subscription.exists({ memberId: member._id });
+  const joiningFee = !everHad && !waiveJoiningFee ? plan.joiningFee || 0 : 0;
+  const gross = plan.price + joiningFee;
+  let couponDiscount = 0;
+  let coupon = null;
+  if (couponCode) ({ coupon, discount: couponDiscount } = await evaluateCoupon(couponCode, { plan, gross, isNewMember: !everHad }));
+  const totalDiscount = discount + couponDiscount;
+  if (discount < 0 || totalDiscount > gross) throw ApiError.badRequest('Discount cannot exceed the amount');
+  const taxPercent = plan.taxPercent ?? gym.taxPercent ?? 0;
+  const taxable = gross - totalDiscount;
+  const taxAmount = calcTax(taxable, taxPercent);
+  return {
+    everHad: Boolean(everHad),
+    price: plan.price,
+    joiningFee,
+    discount: totalDiscount,
+    couponDiscount,
+    coupon,
+    taxPercent,
+    taxAmount,
+    totalAmount: taxable + taxAmount,
+  };
+}
+
+/**
  * Creates a new / renewal membership with invoice and an optional first payment.
  */
-export async function createSubscription({ memberId, planId, startDate, discount = 0, waiveJoiningFee = false, payment, user, type, allowBackdate = false }) {
+export async function createSubscription({
+  memberId, planId, startDate, discount = 0, waiveJoiningFee = false, couponCode, payment, user, type, allowBackdate = false,
+}) {
   const [member, plan, gym] = await Promise.all([
     Member.findOne({ _id: memberId, isDeleted: false }).lean(),
     Plan.findOne({ _id: planId, isDeleted: false, isActive: true }).lean(),
@@ -108,11 +142,10 @@ export async function createSubscription({ memberId, planId, startDate, discount
   if (!member) throw ApiError.notFound('Member not found');
   if (!plan) throw ApiError.notFound('Plan not found or inactive');
   if (plan.branchIds?.length && !plan.branchIds.map(String).includes(String(member.branchId))) {
-    throw ApiError.badRequest('This plan is not available in the member\'s branch');
+    throw ApiError.badRequest("This plan is not available in the member's branch");
   }
 
   const existing = await liveSubs(member._id).lean();
-  const everHad = existing.length > 0 || (await Subscription.exists({ memberId: member._id }));
   const lastEnd = existing.length ? existing[existing.length - 1].endDate : null;
 
   // Default start: today, or the day after the current membership ends (renewal).
@@ -122,43 +155,47 @@ export async function createSubscription({ memberId, planId, startDate, discount
   const end = computeEndDate(start, plan);
   assertNoOverlap(existing, start, end);
 
-  const joiningFee = !everHad && !waiveJoiningFee ? plan.joiningFee || 0 : 0;
-  const gross = plan.price + joiningFee;
-  if (discount < 0 || discount > gross) throw ApiError.badRequest('Discount cannot exceed the amount');
-  const taxPercent = plan.taxPercent ?? gym.taxPercent ?? 0;
-  const taxable = gross - discount;
-  const taxAmount = calcTax(taxable, taxPercent);
-  const totalAmount = taxable + taxAmount;
+  const q = await quoteSubscription({ member, plan, discount, waiveJoiningFee, couponCode, gym });
+  if (q.coupon) await consumeCoupon(q.coupon._id);
 
-  const sub = await Subscription.create({
-    memberId: member._id,
-    branchId: member.branchId,
-    planId: plan._id,
-    plan: {
-      name: plan.name,
-      durationValue: plan.durationValue,
-      durationUnit: plan.durationUnit,
-      price: plan.price,
-      freezeDaysAllowed: plan.freezeDaysAllowed,
-      maxFreezes: plan.maxFreezes,
-    },
-    type: type || (everHad ? 'renewal' : 'new'),
-    startDate: start,
-    endDate: end,
-    originalEndDate: end,
-    price: plan.price,
-    joiningFee,
-    discount,
-    taxPercent,
-    taxAmount,
-    totalAmount,
-    paidAmount: 0,
-    dueAmount: totalAmount,
-    createdBy: user?._id,
-  });
+  let sub;
+  try {
+    sub = await Subscription.create({
+      memberId: member._id,
+      branchId: member.branchId,
+      planId: plan._id,
+      plan: {
+        name: plan.name,
+        durationValue: plan.durationValue,
+        durationUnit: plan.durationUnit,
+        price: plan.price,
+        freezeDaysAllowed: plan.freezeDaysAllowed,
+        maxFreezes: plan.maxFreezes,
+        accessStart: plan.accessStart,
+        accessEnd: plan.accessEnd,
+      },
+      type: type || (q.everHad ? 'renewal' : 'new'),
+      startDate: start,
+      endDate: end,
+      originalEndDate: end,
+      price: q.price,
+      joiningFee: q.joiningFee,
+      discount: q.discount,
+      couponCode: q.coupon?.code,
+      taxPercent: q.taxPercent,
+      taxAmount: q.taxAmount,
+      totalAmount: q.totalAmount,
+      paidAmount: 0,
+      dueAmount: q.totalAmount,
+      createdBy: user?._id,
+    });
+  } catch (err) {
+    if (q.coupon) await Coupon.updateOne({ _id: q.coupon._id }, { $inc: { usedCount: -1 } });
+    throw err;
+  }
 
   const items = [{ description: `${plan.name} membership (${ymd(start)} to ${ymd(end)})`, amount: plan.price }];
-  if (joiningFee) items.push({ description: 'Joining fee', amount: joiningFee });
+  if (q.joiningFee) items.push({ description: 'Joining fee', amount: q.joiningFee });
   const invoice = await createInvoice({ gym, member, sub, items });
   sub.invoiceId = invoice._id;
   await sub.save();

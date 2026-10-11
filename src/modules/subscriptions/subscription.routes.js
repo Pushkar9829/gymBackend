@@ -49,6 +49,7 @@ router.post(
       startDate: day.optional(),
       discount: z.number().int().min(0).default(0),
       waiveJoiningFee: z.boolean().default(false),
+      couponCode: z.string().trim().max(20).optional(),
       payment: paymentBody,
     }),
   }),

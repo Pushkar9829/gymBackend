@@ -25,6 +25,8 @@ const subscriptionSchema = new mongoose.Schema(
       price: Number,
       freezeDaysAllowed: Number,
       maxFreezes: Number,
+      accessStart: String, // HH:MM, time-slot plans (e.g. morning only)
+      accessEnd: String,
     },
     type: { type: String, enum: ['new', 'renewal', 'upgrade'], default: 'new' },
     startDate: { type: Date, required: true }, // start of first day (gym tz)
@@ -39,6 +41,7 @@ const subscriptionSchema = new mongoose.Schema(
     price: Number,
     joiningFee: { type: Number, default: 0 },
     discount: { type: Number, default: 0 },
+    couponCode: String,
     taxPercent: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
     totalAmount: { type: Number, required: true },
