@@ -88,6 +88,7 @@ router.post('/', permit('members.write'), validate({ body: memberBody.extend({ p
   }
   const member = await Member.create({
     ...data,
+    cardNo: data.cardNo || undefined, // never store null: the unique sparse index allows only one null
     memberCode: await newMemberCode(),
     ...(portalPassword ? { portalEnabled: true, passwordHash: await hashPassword(portalPassword) } : {}),
   });
@@ -107,7 +108,7 @@ router.post(
         results.skipped.push({ row: i + 1, phone: row.phone, reason: 'Phone already exists' });
         continue;
       }
-      await Member.create({ ...row, branchId: req.body.branchId, memberCode: await newMemberCode() });
+      await Member.create({ ...row, cardNo: row.cardNo || undefined, branchId: req.body.branchId, memberCode: await newMemberCode() });
       results.created += 1;
     }
     await audit(req, 'member.import', { entity: 'Member', branchId: req.body.branchId, details: { created: results.created } });
@@ -131,7 +132,10 @@ router.put('/:id', permit('members.write'), validate({ body: memberBody.partial(
   const member = await findInBranch(req, Member, req.params.id, { notFound: 'Member not found', extra: { isDeleted: false } });
   const oldBranch = String(member.branchId);
   if (req.body.branchId) assertBranchAccess(req, req.body.branchId);
-  Object.assign(member, req.body);
+  const { cardNo, ...changes } = req.body;
+  Object.assign(member, changes);
+  // null / '' removes the card. Unset it instead of storing null: the unique sparse index allows only one null.
+  if (cardNo !== undefined) member.cardNo = cardNo || undefined;
   await member.save();
   if (req.body.branchId && req.body.branchId !== oldBranch) {
     await removeMemberFromDevices(member, { branchId: oldBranch });

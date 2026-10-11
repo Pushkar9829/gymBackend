@@ -95,3 +95,19 @@ test('RFID: card number goes to the device; card tap checks in', async () => {
   const other = (await api().post('/api/v1/members').set(auth(rec)).send({ branchId: String(ctx.main._id), name: 'Other', phone: '9700100002' })).body.data;
   assert.equal((await api().put(`/api/v1/members/${other._id}`).set(auth(rec)).send({ cardNo: '0012345678' })).status, 409);
 });
+
+test('many members without a card can be registered and edited (no duplicate-null card error)', async () => {
+  const ids = [];
+  for (const phone of ['9500000001', '9500000002', '9500000003']) {
+    const r = await api().post('/api/v1/members').set(auth(rec)).send({ branchId: String(ctx.main._id), name: `No Card ${phone.slice(-1)}`, phone, cardNo: null });
+    assert.equal(r.status, 201, JSON.stringify(r.body));
+    ids.push(r.body.data._id);
+  }
+  for (const id of ids) {
+    const r = await api().put(`/api/v1/members/${id}`).set(auth(rec)).send({ address: 'MG Road', cardNo: '' });
+    assert.equal(r.status, 200, JSON.stringify(r.body));
+  }
+  // Giving a card and then removing it again also works.
+  assert.equal((await api().put(`/api/v1/members/${ids[0]}`).set(auth(rec)).send({ cardNo: '55667788' })).status, 200);
+  assert.equal((await api().put(`/api/v1/members/${ids[0]}`).set(auth(rec)).send({ cardNo: null })).status, 200);
+});
