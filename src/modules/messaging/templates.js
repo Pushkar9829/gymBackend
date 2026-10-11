@@ -33,6 +33,14 @@ export const TEMPLATES = {
     vars: (v) => [v.name, v.className, v.time, v.gym],
     text: (v) => `Hi ${v.name}, reminder: ${v.className} at ${v.time} today - ${v.gym}`,
   },
+  feedback_update: {
+    vars: (v) => [v.name, v.ticket, v.status, v.gym],
+    text: (v) => `Hi ${v.name}, your ${v.gym} ticket ${v.ticket} ${v.status}. Open the member app to see it.`,
+  },
+  locker_reminder: {
+    vars: (v) => [v.name, v.locker, v.date, v.gym],
+    text: (v) => `Hi ${v.name}, your locker ${v.locker} at ${v.gym} is paid till ${v.date}. Please renew at the desk or empty it.`,
+  },
   announcement: {
     vars: (v) => [v.name, v.text],
     text: (v) => v.text,

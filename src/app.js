@@ -42,6 +42,8 @@ import payrollRoutes from './modules/payroll/payroll.routes.js';
 import shopRoutes from './modules/shop/shop.routes.js';
 import equipmentRoutes from './modules/equipment/equipment.routes.js';
 import companyRoutes from './modules/companies/company.routes.js';
+import lockerRoutes, { portalLockerRouter } from './modules/lockers/locker.routes.js';
+import { feedbackRouter, portalFeedbackRouter } from './modules/feedback/feedback.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
@@ -123,9 +125,13 @@ export function createApp() {
   api.use('/shop', shopRoutes);
   api.use('/equipment', equipmentRoutes);
   api.use('/companies', companyRoutes);
+  api.use('/lockers', lockerRoutes);
+  api.use('/feedback', feedbackRouter);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalClassRouter);
+  api.use('/me', portalLockerRouter);
+  api.use('/me', portalFeedbackRouter);
   api.use('/me', portalRoutes);
   app.use('/api/v1', api);
 

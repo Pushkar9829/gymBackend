@@ -15,6 +15,8 @@ export const PERMISSIONS = [
   'payroll.manage',
   'shop.sell', 'shop.manage',
   'equipment.read', 'equipment.manage',
+  'lockers.read', 'lockers.write', 'lockers.manage',
+  'feedback.read', 'feedback.write',
   'users.read', 'users.write',
   'branches.write', 'settings.write',
 ];
@@ -28,6 +30,7 @@ export const ROLES = {
     'leads.read', 'leads.write', 'expenses.read', 'expenses.write', 'devices.read',
     'pt.read', 'pt.sell', 'pt.log', 'fitness.read',
     'classes.read', 'classes.book', 'classes.attendance', 'shop.sell', 'equipment.read',
+    'lockers.read', 'lockers.write', 'feedback.read', 'feedback.write',
   ],
   trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write', 'classes.read', 'classes.attendance', 'equipment.read'],
 };

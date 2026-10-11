@@ -15,6 +15,9 @@ import { Notification } from '../notifications/notification.model.js';
 import { Device } from '../devices/device.model.js';
 import { Branch } from '../branches/branch.model.js';
 import { Sale } from '../shop/shop.model.js';
+import { Feedback } from '../feedback/feedback.model.js';
+import { LockerAllotment } from '../lockers/locker.model.js';
+import { can } from '../../config/permissions.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -62,10 +65,16 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
       { $sort: { _id: 1 } },
     ]),
   ]);
+  const [openComplaints, lockersOverdue] = await Promise.all([
+    can(req.user.role, 'feedback.read') ? Feedback.countDocuments({ ...bf, type: 'complaint', status: { $in: ['open', 'in-progress'] } }) : null,
+    can(req.user.role, 'lockers.read') ? LockerAllotment.countDocuments({ ...bf, status: 'active', endDate: { $lt: today } }) : null,
+  ]);
 
   res.json({
     success: true,
     data: {
+      openComplaints,
+      lockersOverdue,
       members: { active, frozen, expiringIn7Days: expiring7, expiredLast30Days: expiredLast30, newThisMonth },
       attendance: { checkinsToday, deniedToday, last14Days: trend.map((t) => ({ day: t._id, count: t.count })) },
       money: canMoney
@@ -177,6 +186,13 @@ router.get('/pnl', permit('reports.read'), async (req, res) => {
     { $group: { _id: null, total: { $sum: '$total' }, tax: { $sum: '$taxAmount' }, cost: { $sum: '$cost' } } },
   ]);
   const shop = shopAgg[0] || { total: 0, tax: 0, cost: 0 };
+  const lockerAgg = await LockerAllotment.aggregate([
+    { $match: bf },
+    { $unwind: '$charges' },
+    { $match: { 'charges.kind': 'rent', 'charges.at': { $gte: from, $lt: toExclusive } } },
+    { $group: { _id: null, total: { $sum: '$charges.amount' } } },
+  ]);
+  const lockerRent = lockerAgg[0]?.total || 0;
   // Shop: revenue counted without GST (collected for the government) minus cost of goods.
   const shopProfit = shop.total - shop.tax - shop.cost;
   const income = collected - refunded;
@@ -190,9 +206,10 @@ router.get('/pnl', permit('reports.read'), async (req, res) => {
       refunded,
       shopSales: shop.total,
       shopProfit,
+      lockerRent,
       expenses: expenseTotal,
       expensesByCategory: expenses,
-      profit: income + shopProfit - expenseTotal,
+      profit: income + shopProfit + lockerRent - expenseTotal,
     },
   });
 });

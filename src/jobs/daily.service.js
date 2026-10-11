@@ -13,6 +13,7 @@ import { sendEmail } from '../modules/notifications/mailer.js';
 import { notifyMember } from '../modules/messaging/messaging.service.js';
 import { sendClassReminders } from '../modules/classes/class.service.js';
 import { equipmentServiceAlerts } from '../modules/equipment/equipment.routes.js';
+import { lockerAlerts } from '../modules/lockers/locker.routes.js';
 import { startOfDay, addDays, ymd, dmy, dayjs, tz } from '../utils/dates.js';
 import { formatINR } from '../utils/money.js';
 import { logger } from '../config/logger.js';
@@ -115,6 +116,7 @@ export async function runDailyJob({ now = new Date() } = {}) {
   // 4b. Reminders for today's booked classes (SMS/WhatsApp when switched on)
   report.classReminders = await sendClassReminders({ now, gym });
   report.equipmentAlerts = await equipmentServiceAlerts({ now });
+  report.lockers = await lockerAlerts({ now });
 
   // 5. Follow-up alert per branch
   const due = await Lead.aggregate([
