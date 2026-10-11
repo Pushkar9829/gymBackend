@@ -21,6 +21,7 @@ import { hashPassword, revokeAllSessions } from '../auth/auth.service.js';
 import { qrPayload } from '../access/qr.js';
 import { audit } from '../audit/audit.model.js';
 import { can } from '../../config/permissions.js';
+import { trainerMemberFilter, loadAccessibleMember } from './trainerScope.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -48,16 +49,14 @@ const memberBody = z.object({
 
 const MEMBER_CODE_START = 1001;
 
-/** Trainers only see members assigned to them. */
-const trainerScope = (req) => (req.user.role === 'trainer' ? { trainerId: req.user._id } : {});
-const loadMember = (req, id, { deleted = false } = {}) =>
-  findInBranch(req, Member, id, { notFound: 'Member not found', extra: { isDeleted: deleted, ...trainerScope(req) } });
+// Trainers only see members assigned to them or their PT clients.
+const loadMember = (req, id, opts) => loadAccessibleMember(req, id, opts);
 const newMemberCode = () => nextSeq('memberCode', MEMBER_CODE_START);
 
 router.get('/', permit('members.read'), async (req, res) => {
   const q = req.query;
   const showDeleted = q.deleted === 'true' && can(req.user.role, 'members.delete');
-  const filter = { isDeleted: showDeleted, ...branchFilter(req), ...trainerScope(req) };
+  const filter = { isDeleted: showDeleted, ...branchFilter(req), ...(await trainerMemberFilter(req.user)) };
   if (q.status && MEMBERSHIP_STATUS.includes(q.status)) filter.membershipStatus = q.status;
   if (q.blocked === 'true') filter.isBlocked = true;
   if (q.due === 'true') filter.dueAmount = { $gt: 0 };
@@ -235,7 +234,7 @@ router.get('/:id/card', permit('members.read'), async (req, res) => {
 });
 
 router.get('/:id/timeline', permit('members.read'), async (req, res) => {
-  const member = await findInBranch(req, Member, req.params.id, { notFound: 'Member not found', extra: trainerScope(req) });
+  const member = await loadAccessibleMember(req, req.params.id);
   const [payments, attendance, accessLogs] = await Promise.all([
     Payment.find({ memberId: member._id }).sort({ paidAt: -1 }).limit(100).populate('receivedBy', 'name').lean(),
     Attendance.find({ memberId: member._id }).sort({ checkInAt: -1 }).limit(60).lean(),

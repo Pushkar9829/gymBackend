@@ -13,6 +13,9 @@ import { qrPayload } from '../access/qr.js';
 import { sendInvoicePdf } from '../invoices/invoice.routes.js';
 import { getGym } from '../settings/gym.model.js';
 import { PtPurchase, PtSession } from '../pt/pt.model.js';
+import { WorkoutPlan, DietPlan, Measurement } from '../fitness/fitness.model.js';
+import { measurementBody } from '../fitness/fitness.routes.js';
+import { validate } from '../../middlewares/validate.js';
 
 // Member-facing API (PWA). Everything is scoped to the logged-in member.
 const router = Router();
@@ -56,6 +59,21 @@ router.get('/pt', async (req, res) => {
     PtSession.find({ memberId: req.member._id }).sort({ at: -1 }).limit(50).populate('trainerId', 'name').select('at status notes trainerId').lean(),
   ]);
   res.json({ success: true, data: { purchases, sessions } });
+});
+
+router.get('/fitness', async (req, res) => {
+  const [workout, diet, measurements] = await Promise.all([
+    WorkoutPlan.findOne({ memberId: req.member._id, isActive: true }).populate('createdBy', 'name').lean(),
+    DietPlan.findOne({ memberId: req.member._id, isActive: true }).populate('createdBy', 'name').lean(),
+    Measurement.find({ memberId: req.member._id }).sort({ date: 1 }).lean(),
+  ]);
+  res.json({ success: true, data: { workout, diet, measurements } });
+});
+
+// Members can log their own weight / measurements.
+router.post('/measurements', validate({ body: measurementBody.omit({ photos: true }) }), async (req, res) => {
+  if (req.body.date > new Date()) throw ApiError.badRequest('Date cannot be in the future');
+  res.status(201).json({ success: true, data: await Measurement.create({ ...req.body, memberId: req.member._id }) });
 });
 
 router.get('/payments', async (req, res) => {

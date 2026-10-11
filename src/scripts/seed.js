@@ -16,6 +16,8 @@ import { Device } from '../modules/devices/device.model.js';
 import { hashPassword } from '../modules/auth/auth.service.js';
 import { createSubscription } from '../modules/subscriptions/subscription.service.js';
 import { nextSeq } from '../utils/counter.js';
+import { Exercise } from '../modules/fitness/fitness.model.js';
+import { DEFAULT_EXERCISES } from '../modules/fitness/exercises.defaults.js';
 import { addDays, ymd } from '../utils/dates.js';
 
 const demo = process.argv.includes('--demo');
@@ -46,6 +48,11 @@ if (!(await Plan.exists({}))) {
     { name: 'Day Pass', durationValue: 1, durationUnit: 'day', price: 20000, joiningFee: 0 },
   ]);
   console.log('Starter plans created');
+}
+
+if (!(await Exercise.exists({}))) {
+  await Exercise.insertMany(DEFAULT_EXERCISES);
+  console.log('Exercise library created');
 }
 
 if (demo) {
