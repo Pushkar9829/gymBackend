@@ -3,6 +3,7 @@ import { getGym } from '../settings/gym.model.js';
 import { logger } from '../../config/logger.js';
 import { renderTemplate } from './templates.js';
 import { smsProvider, whatsappProvider } from './providers.js';
+import { pushOn, sendPush } from '../push/push.service.js';
 
 const PROVIDERS = { sms: smsProvider, whatsapp: whatsappProvider };
 
@@ -40,16 +41,25 @@ export async function sendMessage({ to, member, channel, template, vars, dedupeK
 }
 
 /**
- * Sends a template to a member on every SMS / WhatsApp channel the gym has switched on.
- * `gym` may be passed to avoid re-reading settings in loops.
+ * Sends a template to a member on every SMS / WhatsApp channel the gym has switched on, and as a
+ * member app notification (push) to the devices where the member turned notifications on.
+ * `gym` may be passed to avoid re-reading settings in loops. `channels` limits it (push only when listed).
  */
 export async function notifyMember({ member, template, vars = {}, dedupeKey, gym, channels }) {
   if (member?.isTrial) return []; // trial visitors are not on member messaging
   gym = gym || (await getGym());
   const on = channels || ['sms', 'whatsapp'].filter((c) => gym.settings?.channels?.[c]);
+  const all = { gym: gym.name, name: member.name, ...vars };
   const results = [];
-  for (const channel of on) {
-    results.push(await sendMessage({ member, channel, template, vars: { gym: gym.name, name: member.name, ...vars }, dedupeKey }));
+  for (const channel of on.filter((c) => c !== 'push')) {
+    results.push(await sendMessage({ member, channel, template, vars: all, dedupeKey }));
+  }
+  if ((!channels || channels.includes('push')) && pushOn(gym)) {
+    try {
+      results.push(await sendPush({ member, template, text: renderTemplate(template, all).text, gym, dedupeKey }));
+    } catch (err) {
+      logger.error({ err, template }, 'push failed');
+    }
   }
   return results.filter(Boolean);
 }

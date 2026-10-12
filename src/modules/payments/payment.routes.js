@@ -18,6 +18,8 @@ import { getGym } from '../settings/gym.model.js';
 import { receiptPdf } from '../invoices/invoice.pdf.js';
 import { audit } from '../audit/audit.model.js';
 import { inBackground, sendReceiptEmail } from '../notifications/emails.js';
+import { maybeRevokeReferral } from '../referrals/referral.service.js';
+import { logger } from '../../config/logger.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -137,6 +139,10 @@ router.post(
       refundOf: original._id,
     });
     await refreshMember(original.memberId);
+    if (original.subscriptionId) {
+      // Friend's first membership cancelled + refunded early: the referrer's reward is taken back.
+      await maybeRevokeReferral(original.subscriptionId).catch((err) => logger.error({ err }, 'referral revoke check failed'));
+    }
     await audit(req, 'payment.refund', {
       entity: 'Payment',
       entityId: refund._id,

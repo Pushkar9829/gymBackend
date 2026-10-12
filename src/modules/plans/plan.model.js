@@ -23,6 +23,8 @@ const planSchema = new mongoose.Schema(
     // Empty = available in all branches
     branchIds: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Branch' }],
     isActive: { type: Boolean, default: true },
+    // Shown on the public Join page for buying online (owners switch it on per plan).
+    sellOnline: { type: Boolean, default: false },
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true },

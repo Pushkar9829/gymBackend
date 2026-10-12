@@ -11,6 +11,7 @@ import { createSubscription, quoteSubscription, recordPayment } from '../subscri
 import { refreshMember } from '../members/member.state.js';
 import { createAlert } from '../notifications/notification.service.js';
 import { inBackground, sendReceiptEmail } from '../notifications/emails.js';
+import { applyJoin } from './join.service.js';
 
 const receipt = (op) => `op_${String(op._id)}`.slice(0, 40);
 
@@ -71,8 +72,9 @@ export async function createDueLink({ subscription, user }) {
  * Applies a successful gateway payment exactly once (checkout callback and webhook may both arrive).
  */
 export async function completeOnlinePayment({ op, gatewayPaymentId, amount }) {
+  // An online join paid after its order timed out is still applied: the money was taken.
   const locked = await OnlinePayment.findOneAndUpdate(
-    { _id: op._id, status: 'created' },
+    { _id: op._id, $or: [{ status: 'created' }, { status: 'expired', kind: 'join' }] },
     { status: 'processing', gatewayPaymentId },
     { returnDocument: 'after' },
   );
@@ -82,7 +84,10 @@ export async function completeOnlinePayment({ op, gatewayPaymentId, amount }) {
   try {
     let paymentId;
     let resultSubscriptionId;
-    if (locked.kind === 'renewal') {
+    let memberId;
+    if (locked.kind === 'join') {
+      ({ paymentId, resultSubscriptionId, memberId } = await applyJoin(locked, { paid, gatewayPaymentId }));
+    } else if (locked.kind === 'renewal') {
       const r = await createSubscription({
         memberId: locked.memberId,
         planId: locked.planId,
@@ -110,8 +115,8 @@ export async function completeOnlinePayment({ op, gatewayPaymentId, amount }) {
       resultSubscriptionId = locked.subscriptionId;
       await refreshMember(locked.memberId);
     }
-    const done = await OnlinePayment.findByIdAndUpdate(locked._id, { status: 'paid', paymentId, resultSubscriptionId }, { returnDocument: 'after' }).lean();
-    if (paymentId && locked.kind !== 'renewal') await inBackground('receipt-email', () => sendReceiptEmail(paymentId));
+    const done = await OnlinePayment.findByIdAndUpdate(locked._id, { status: 'paid', paymentId, resultSubscriptionId, ...(memberId ? { memberId } : {}) }, { returnDocument: 'after' }).lean();
+    if (paymentId && !['renewal', 'join'].includes(locked.kind)) await inBackground('receipt-email', () => sendReceiptEmail(paymentId));
     return done;
   } catch (err) {
     // Money was received but could not be applied: never lose it silently.
@@ -121,7 +126,7 @@ export async function completeOnlinePayment({ op, gatewayPaymentId, amount }) {
       branchId: locked.branchId,
       memberId: locked.memberId,
       template: 'online-payment-failed',
-      subject: 'Online payment received but not applied',
+      subject: locked.kind === 'join' ? `Online join paid but not completed: ${locked.join?.name} (${locked.join?.phone})` : 'Online payment received but not applied',
       body: `Razorpay ${gatewayPaymentId}: ${err.message}. Record it manually or refund.`,
     });
     throw err;

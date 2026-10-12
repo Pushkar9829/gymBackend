@@ -11,6 +11,8 @@ import { PAYMENT_MODES } from '../payments/payment.model.js';
 import * as svc from './subscription.service.js';
 import { audit } from '../audit/audit.model.js';
 import { withDiscountGuard } from '../approvals/approval.service.js';
+import { getGym } from '../settings/gym.model.js';
+import { resolveReferrer, attachReferral } from '../referrals/referral.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -54,11 +56,17 @@ router.post(
       familyMemberIds: z.array(objectId).max(9).default([]),
       payment: paymentBody,
       approvalId: objectId.optional(),
+      referredBy: objectId.optional().nullable(), // first membership only: the member who referred them
     }),
   }),
   async (req, res) => {
     const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found' });
-    const { approvalId, ...body } = req.body;
+    const { approvalId, referredBy, ...body } = req.body;
+    if (referredBy && String(referredBy) !== String(member.referredBy || '')) {
+      const gym = await getGym();
+      const referrer = await resolveReferrer({ referrerId: referredBy, phone: member.phone, memberId: member._id, settings: gym.settings });
+      await attachReferral({ member, referrer, source: 'desk', user: req.user, settings: gym.settings });
+    }
     const { result, done } = await withDiscountGuard(
       req,
       { kind: 'subscription', branchId: member.branchId, memberId: member._id, discount: body.discount, approvalId, planId: body.planId, waiveJoiningFee: body.waiveJoiningFee },

@@ -6,6 +6,11 @@ const required = (name, fallback) => {
 
 const isProd = process.env.NODE_ENV === 'production';
 
+// Optional Web Push (member app notifications): both keys or neither; the subject must be a mailto: or https: URL.
+const vapid = { publicKey: process.env.VAPID_PUBLIC_KEY || '', privateKey: process.env.VAPID_PRIVATE_KEY || '', subject: process.env.VAPID_SUBJECT || '' };
+if (Boolean(vapid.publicKey) !== Boolean(vapid.privateKey)) throw new Error('Set both VAPID_PUBLIC_KEY and VAPID_PRIVATE_KEY, or neither');
+if (vapid.subject && !/^(mailto:|https:\/\/)/.test(vapid.subject)) throw new Error('VAPID_SUBJECT must start with mailto: or https://');
+
 export const env = {
   nodeEnv: process.env.NODE_ENV || 'development',
   isProd,
@@ -27,6 +32,7 @@ export const env = {
     pass: process.env.SMTP_PASS,
     from: process.env.MAIL_FROM || 'Gym <no-reply@example.com>',
   },
+  pushEnabled: Boolean(vapid.publicKey && vapid.privateKey),
   cloudinary: {
     cloudName: process.env.CLOUDINARY_CLOUD_NAME,
     apiKey: process.env.CLOUDINARY_API_KEY,

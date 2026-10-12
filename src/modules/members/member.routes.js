@@ -22,6 +22,10 @@ import { qrPayload } from '../access/qr.js';
 import { audit } from '../audit/audit.model.js';
 import { can } from '../../config/permissions.js';
 import { trainerMemberFilter, loadAccessibleMember } from './trainerScope.js';
+import { getGym } from '../settings/gym.model.js';
+import { Referral } from '../referrals/referral.model.js';
+import { ensureReferralCode, resolveReferrer, attachReferral } from '../referrals/referral.service.js';
+import { PushSubscription } from '../push/push.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -75,29 +79,40 @@ router.get('/', permit('members.read'), async (req, res) => {
     const rx = new RegExp(escapeRegex(s), 'i');
     filter.$or = [{ name: rx }, { phone: rx }, { email: rx }];
     if (/^\d+$/.test(s)) filter.$or.push({ memberCode: Number(s) });
+    if (/^[A-Za-z0-9]{6}$/.test(s)) filter.$or.push({ referralCode: s.toUpperCase() }); // a friend's referral code
   }
   const sort = q.sort === 'name' ? { name: 1 } : q.sort === 'end' ? { membershipEnd: 1 } : { createdAt: -1 };
   const data = await paginate(Member, filter, q, { sort, populate: { path: 'trainerId', select: 'name' } });
   res.json({ success: true, data });
 });
 
-router.post('/', permit('members.write'), validate({ body: memberBody.extend({ portalPassword: z.string().min(8).optional() }) }), async (req, res) => {
-  assertBranchAccess(req, req.body.branchId);
-  const { portalPassword, ...data } = req.body;
-  const existing = await Member.findOne({ phone: data.phone, isDeleted: false }).select('name memberCode isTrial').lean();
-  if (existing?.isTrial) throw ApiError.conflict(`${existing.name} (#${existing.memberCode}) has a trial pass. Open Trials and use Convert to member.`);
-  if (existing && !req.query.allowDuplicatePhone) {
-    throw ApiError.conflict(`Phone already registered to ${existing.name} (#${existing.memberCode})`);
-  }
-  const member = await Member.create({
-    ...data,
-    cardNo: data.cardNo || undefined, // never store null: the unique sparse index allows only one null
-    memberCode: await newMemberCode(),
-    ...(portalPassword ? { portalEnabled: true, passwordHash: await hashPassword(portalPassword) } : {}),
-  });
-  await audit(req, 'member.create', { entity: 'Member', entityId: member._id, branchId: member.branchId });
-  res.status(201).json({ success: true, data: member });
-});
+router.post(
+  '/',
+  permit('members.write'),
+  validate({ body: memberBody.extend({ portalPassword: z.string().min(8).optional(), referredBy: objectId.optional().nullable() }) }),
+  async (req, res) => {
+    assertBranchAccess(req, req.body.branchId);
+    const { portalPassword, referredBy, ...data } = req.body;
+    const existing = await Member.findOne({ phone: data.phone, isDeleted: false }).select('name memberCode isTrial').lean();
+    if (existing?.isTrial) throw ApiError.conflict(`${existing.name} (#${existing.memberCode}) has a trial pass. Open Trials and use Convert to member.`);
+    if (existing && !req.query.allowDuplicatePhone) {
+      throw ApiError.conflict(`Phone already registered to ${existing.name} (#${existing.memberCode})`);
+    }
+    // Check the referrer before creating anything.
+    const gym = referredBy ? await getGym() : null;
+    const referrer = referredBy ? await resolveReferrer({ referrerId: referredBy, phone: data.phone, settings: gym.settings }) : null;
+    const member = await Member.create({
+      ...data,
+      cardNo: data.cardNo || undefined, // never store null: the unique sparse index allows only one null
+      memberCode: await newMemberCode(),
+      ...(referrer ? { source: 'referral' } : {}),
+      ...(portalPassword ? { portalEnabled: true, passwordHash: await hashPassword(portalPassword) } : {}),
+    });
+    if (referrer) await attachReferral({ member, referrer, source: 'desk', user: req.user, settings: gym.settings });
+    await audit(req, 'member.create', { entity: 'Member', entityId: member._id, branchId: member.branchId, details: referrer ? { referredBy: referrer._id } : undefined });
+    res.status(201).json({ success: true, data: member });
+  },
+);
 
 router.post(
   '/import',
@@ -121,13 +136,18 @@ router.post(
 
 router.get('/:id', permit('members.read'), async (req, res) => {
   const member = await loadMember(req, req.params.id);
-  await member.populate([{ path: 'trainerId', select: 'name phone' }, { path: 'branchId', select: 'name code' }, { path: 'companyId', select: 'name discountPercent billTo' }]);
+  if (!member.isTrial && !member.referralCode) member.referralCode = await ensureReferralCode(member);
+  await member.populate([{ path: 'trainerId', select: 'name phone' }, { path: 'branchId', select: 'name code' }, { path: 'companyId', select: 'name discountPercent billTo' }, { path: 'referredBy', select: 'name memberCode' }]);
   const { access, subscriptions } = await loadAccess(member);
-  const deviceUsers = await DeviceUser.find({ memberId: member._id }).populate('deviceId', 'name serialNo lastSeenAt').lean();
+  const [deviceUsers, referral, referred] = await Promise.all([
+    DeviceUser.find({ memberId: member._id }).populate('deviceId', 'name serialNo lastSeenAt').lean(),
+    Referral.findOne({ referredId: member._id }).select('status rewardDays note').lean(),
+    Referral.countDocuments({ referrerId: member._id, status: 'rewarded' }),
+  ]);
   subscriptions.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
   res.json({
     success: true,
-    data: { member, access: { ...access, current: undefined }, subscriptions, deviceUsers },
+    data: { member, access: { ...access, current: undefined }, subscriptions, deviceUsers, referral: { record: referral, friendsRewarded: referred } },
   });
 });
 
@@ -156,6 +176,7 @@ router.delete('/:id', permit('members.delete'), async (req, res) => {
   await member.save();
   await removeMemberFromDevices(member);
   await revokeAllSessions(member._id);
+  await PushSubscription.deleteMany({ memberId: member._id });
   await audit(req, 'member.delete', { entity: 'Member', entityId: member._id, branchId: member.branchId });
   res.json({ success: true });
 });

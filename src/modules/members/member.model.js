@@ -21,6 +21,9 @@ const memberSchema = new mongoose.Schema(
     trainerId: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     source: { type: String, default: 'walk-in' },
     companyId: { type: mongoose.Schema.Types.ObjectId, ref: 'Company' }, // corporate tie-up
+    // Refer a friend: own short code (made on first use) and who referred this member.
+    referralCode: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
+    referredBy: { type: mongoose.Schema.Types.ObjectId, ref: 'Member' },
     notes: String,
     documents: [
       {

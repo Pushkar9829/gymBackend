@@ -29,6 +29,7 @@ const body = z.object({
   maxFreezes: z.number().int().min(0).max(12).optional(),
   branchIds: z.array(objectId).optional(),
   isActive: z.boolean().optional(),
+  sellOnline: z.boolean().optional(),
 });
 
 router.get('/', permit('plans.read'), async (req, res) => {

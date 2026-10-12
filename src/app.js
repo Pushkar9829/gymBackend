@@ -54,6 +54,9 @@ import { feedbackRouter, portalFeedbackRouter } from './modules/feedback/feedbac
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
 import trialRoutes from './modules/trials/trial.routes.js';
 import handoverRoutes from './modules/handover/handover.routes.js';
+import { referralRouter, portalReferralRouter } from './modules/referrals/referral.routes.js';
+import { portalWorkoutRouter, staffWorkoutRouter } from './modules/fitness/workoutLog.routes.js';
+import { portalPushRouter } from './modules/push/push.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
 export function createApp() {
@@ -131,6 +134,7 @@ export function createApp() {
   api.use('/pt', ptRoutes);
   api.use('/pt', ptScheduleRouter);
   api.use('/fitness/progress', progressRoutes);
+  api.use('/fitness/workout-logs', staffWorkoutRouter);
   api.use('/fitness', fitnessRoutes);
   api.use('/freeze-requests', freezeRequestRouter);
   api.use('/waivers', waiverRouter);
@@ -146,6 +150,7 @@ export function createApp() {
   api.use('/feedback', feedbackRouter);
   api.use('/trials', trialRoutes);
   api.use('/handover', handoverRoutes);
+  api.use('/referrals', referralRouter);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalClassRouter);
@@ -155,6 +160,9 @@ export function createApp() {
   api.use('/me', portalFreezeRouter);
   api.use('/me', portalProgressRouter);
   api.use('/me', portalWaiverRouter);
+  api.use('/me', portalWorkoutRouter);
+  api.use('/me', portalReferralRouter);
+  api.use('/me', portalPushRouter);
   api.use('/me', portalRoutes);
   app.use('/api/v1', api);
 

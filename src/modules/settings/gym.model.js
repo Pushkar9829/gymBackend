@@ -23,6 +23,8 @@ const gymSchema = new mongoose.Schema(
       channels: {
         sms: { type: Boolean, default: false },
         whatsapp: { type: Boolean, default: false },
+        // Member app notifications (Web Push). Works only when VAPID keys are set on the server.
+        push: { type: Boolean, default: true },
       },
       // Members can log in to the app with a one-time code sent by SMS/WhatsApp.
       memberOtpLogin: { type: Boolean, default: true },
@@ -57,6 +59,17 @@ const gymSchema = new mongoose.Schema(
         requireForEntry: { type: Boolean, default: false }, // deny entry until signed
         currentVersion: { type: Number, default: 0 }, // 0 = no waiver text yet
         minVersion: { type: Number, default: 0 }, // members must have signed at least this version
+      },
+      // Refer a friend: the referrer gets free days once the friend's first membership is paid.
+      referral: {
+        enabled: { type: Boolean, default: true },
+        rewardDays: { type: Number, default: 15, min: 0, max: 90 },
+        newMemberDiscountPercent: { type: Number, default: 0, min: 0, max: 50 }, // friend's first membership
+        maxPerYear: { type: Number, default: 12, min: 0, max: 100 }, // rewards per referrer per calendar year
+      },
+      // Member app streaks: a week counts when the member visits at least this many days (Mon-Sun).
+      streaks: {
+        weeklyVisits: { type: Number, default: 3, min: 1, max: 7 },
       },
     },
   },

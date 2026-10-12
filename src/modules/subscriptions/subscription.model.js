@@ -34,6 +34,15 @@ const subscriptionSchema = new mongoose.Schema(
     endDate: { type: Date, required: true }, // start of last valid day (inclusive)
     originalEndDate: Date,
     freezes: [freezeSchema],
+    // Free days added (or taken back) outside freezes, e.g. a referral reward.
+    extensions: [
+      {
+        days: { type: Number, required: true },
+        reason: String,
+        referralId: { type: mongoose.Schema.Types.ObjectId, ref: 'Referral' },
+        at: { type: Date, default: Date.now },
+      },
+    ],
     status: { type: String, enum: ['active', 'cancelled'], default: 'active' },
     cancelledAt: Date,
     cancelReason: String,
@@ -44,6 +53,7 @@ const subscriptionSchema = new mongoose.Schema(
     discount: { type: Number, default: 0 }, // all discounts together
     manualDiscount: Number, // given by staff (not coupon / company / upgrade credit); empty on older records
     couponDiscount: Number,
+    referralDiscount: Number, // new member's first-membership discount for joining with a referral code
     approvalId: { type: mongoose.Schema.Types.ObjectId, ref: 'DiscountApproval' },
     couponCode: String,
     taxPercent: { type: Number, default: 0 },

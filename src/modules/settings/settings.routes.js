@@ -6,12 +6,14 @@ import { Gym } from './gym.model.js';
 import { audit } from '../audit/audit.model.js';
 import { Member } from '../members/member.model.js';
 import { refreshMember } from '../members/member.state.js';
+import { pushConfigured } from '../push/push.service.js';
 
 const router = Router();
 router.use(requireStaff);
 
 router.get('/', async (_req, res) => {
-  res.json({ success: true, data: await Gym.findOne().lean() });
+  // pushReady: VAPID keys are set on the server (the switch below only works then).
+  res.json({ success: true, data: { ...(await Gym.findOne().lean()), pushReady: pushConfigured() } });
 });
 
 const schema = z
@@ -31,7 +33,7 @@ const schema = z
         blockOnDues: z.boolean(),
         reminderDays: z.array(z.number().int().min(0).max(60)).max(5),
         sendEmails: z.boolean(),
-        channels: z.object({ sms: z.boolean(), whatsapp: z.boolean() }).partial(),
+        channels: z.object({ sms: z.boolean(), whatsapp: z.boolean(), push: z.boolean() }).partial(),
         memberOtpLogin: z.boolean(),
         payroll: z.object({ weeklyOff: z.array(z.number().int().min(0).max(6)).max(3), prorateByAttendance: z.boolean() }).partial(),
         discountLimitPercent: z.number().min(0).max(100),
@@ -55,6 +57,15 @@ const schema = z
             noShowUsesSession: z.boolean(),
           })
           .partial(),
+        referral: z
+          .object({
+            enabled: z.boolean(),
+            rewardDays: z.number().int().min(0).max(90),
+            newMemberDiscountPercent: z.number().int().min(0).max(50),
+            maxPerYear: z.number().int().min(1).max(100),
+          })
+          .partial(),
+        streaks: z.object({ weeklyVisits: z.number().int().min(1).max(7) }).partial(),
       })
       .partial(),
   })
@@ -66,7 +77,7 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
   const { settings, ...rest } = req.body;
   Object.assign(gym, rest);
   if (settings) {
-    const { channels, payroll, trial, pt, ...rest } = settings;
+    const { channels, payroll, trial, pt, referral, streaks, ...rest } = settings;
     Object.assign(gym.settings, rest);
     if (channels) Object.assign(gym.settings.channels, channels);
     if (payroll) Object.assign(gym.settings.payroll, payroll);
@@ -78,6 +89,14 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
     if (pt) {
       gym.settings.pt ||= {};
       Object.assign(gym.settings.pt, pt);
+    }
+    if (referral) {
+      gym.settings.referral ||= {};
+      Object.assign(gym.settings.referral, referral);
+    }
+    if (streaks) {
+      gym.settings.streaks ||= {};
+      Object.assign(gym.settings.streaks, streaks);
     }
   }
   await gym.save();

@@ -15,8 +15,13 @@ import { Plan } from '../plans/plan.model.js';
 import { ClassType } from '../classes/class.model.js';
 import { Lead } from '../leads/lead.model.js';
 import { createAlert } from '../notifications/notification.service.js';
+import { Member } from '../members/member.model.js';
+import { onlineJoinEnabled } from '../online/join.service.js';
+import { referralSettings, normalizeCode, shortName } from '../referrals/referral.service.js';
+import joinRoutes from './join.routes.js';
 
 const router = Router();
+router.use('/join', joinRoutes);
 
 const enquiryLimiter = rateLimit({
   windowMs: 60 * 60 * 1000,
@@ -29,13 +34,44 @@ const enquiryLimiter = rateLimit({
 
 router.get('/info', async (_req, res) => {
   const [gym, branches, plans, classTypes] = await Promise.all([
-    Gym.findOne().select('name logoUrl phone email address').lean(),
+    Gym.findOne().select('name logoUrl phone email address settings.referral').lean(),
     Branch.find({ isActive: true }).select('name address phone openingTime closingTime').sort({ name: 1 }).lean(),
-    Plan.find({ isActive: true, isDeleted: false }).select('name description durationValue durationUnit price joiningFee accessStart accessEnd').sort({ durationUnit: 1, durationValue: 1 }).lean(),
+    Plan.find({ isActive: true, isDeleted: false }).select('name description durationValue durationUnit price joiningFee accessStart accessEnd sellOnline branchIds').sort({ durationUnit: 1, durationValue: 1 }).lean(),
     ClassType.find({ isActive: true }).select('name description color').sort({ name: 1 }).lean(),
   ]);
+  const ref = referralSettings(gym?.settings);
+  // "Join online" needs Razorpay keys and at least one plan the owner put on sale online.
+  const onlineJoin = onlineJoinEnabled() && plans.some((p) => p.sellOnline);
   res.set('Cache-Control', 'public, max-age=300');
-  res.json({ success: true, data: { gym, branches, plans, classTypes } });
+  res.json({
+    success: true,
+    data: {
+      gym: gym && { _id: gym._id, name: gym.name, logoUrl: gym.logoUrl, phone: gym.phone, email: gym.email, address: gym.address },
+      branches,
+      plans,
+      classTypes,
+      onlineJoin,
+      referral: { enabled: ref.enabled, friendDiscountPercent: ref.newMemberDiscountPercent },
+    },
+  });
+});
+
+const lookupLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+  skip: () => process.env.NODE_ENV === 'test' || (process.env.DISABLE_RATE_LIMIT === '1' && process.env.NODE_ENV !== 'production'),
+  message: { success: false, message: 'Too many requests. Please try again later.' },
+});
+
+// Who invited me? Shows "Invited by Rahul S." on the Join page opened from a shared link.
+router.get('/referral/:code', lookupLimiter, async (req, res) => {
+  const gym = await Gym.findOne().select('settings.referral').lean();
+  const ref = referralSettings(gym?.settings);
+  const code = normalizeCode(req.params.code);
+  const m = ref.enabled && code.length >= 4 ? await Member.findOne({ referralCode: code, isDeleted: false, isTrial: { $ne: true } }).select('name').lean() : null;
+  res.json({ success: true, data: m ? { valid: true, code, name: shortName(m.name), friendDiscountPercent: ref.newMemberDiscountPercent } : { valid: false } });
 });
 
 router.post(
@@ -49,17 +85,21 @@ router.post(
       email: z.string().trim().email().optional().or(z.literal('').transform(() => undefined)),
       interest: z.string().trim().max(80).optional(),
       message: z.string().trim().max(500).optional(),
+      referralCode: z.string().trim().max(20).optional(),
       website: z.string().optional(), // honeypot: real users never fill this hidden field
     }),
   }),
   async (req, res) => {
-    const { branchId, name, phone, email, interest, message, website } = req.body;
+    const { branchId, name, phone, email, interest, message, referralCode, website } = req.body;
     const ok = { success: true, message: 'Thank you! Our team will call you shortly.' };
     if (website) return res.json(ok); // bot: pretend success, store nothing
     const branch = await Branch.findOne({ _id: branchId, isActive: true }).lean();
     if (!branch) throw ApiError.badRequest('Choose a branch');
 
-    const note = [interest && `Interested in: ${interest}`, message].filter(Boolean).join('\n') || undefined;
+    // Came from a friend's invite link: note who, so the desk can add "Referred by" when they join.
+    const code = normalizeCode(referralCode);
+    const referrer = code ? await Member.findOne({ referralCode: code, isDeleted: false }).select('name memberCode').lean() : null;
+    const note = [interest && `Interested in: ${interest}`, referrer && `Referred by ${referrer.name} (#${referrer.memberCode}, code ${code})`, message].filter(Boolean).join('\n') || undefined;
     // Same person enquiring again within 30 days: add to the existing lead instead of duplicating.
     const open = await Lead.findOne({ phone, isDeleted: false, status: { $in: ['new', 'contacted', 'trial'] }, createdAt: { $gte: addDays(new Date(), -30) } });
     if (open) {
@@ -67,7 +107,7 @@ router.post(
       open.nextFollowUpAt = new Date();
       await open.save();
     } else {
-      await Lead.create({ branchId, name, phone, email, source: 'website', notes: note, nextFollowUpAt: new Date() });
+      await Lead.create({ branchId, name, phone, email, source: referrer ? 'referral' : 'website', notes: note, nextFollowUpAt: new Date() });
     }
     await createAlert({ branchId, template: 'website-enquiry', subject: `New website enquiry: ${name}`, body: `${phone}${interest ? ` · ${interest}` : ''}` });
     res.status(201).json(ok);

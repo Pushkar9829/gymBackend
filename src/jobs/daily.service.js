@@ -19,6 +19,7 @@ import { sendPtReminders } from '../modules/pt/ptBooking.service.js';
 import { PrivateFile } from '../modules/uploads/privateFile.model.js';
 import { equipmentServiceAlerts } from '../modules/equipment/equipment.routes.js';
 import { lockerAlerts } from '../modules/lockers/locker.routes.js';
+import { OnlinePayment } from '../modules/online/onlinePayment.model.js';
 import { startOfDay, addDays, ymd, dmy, dayjs, tz } from '../utils/dates.js';
 import { formatINR } from '../utils/money.js';
 import { logger } from '../config/logger.js';
@@ -140,7 +141,9 @@ export async function runDailyJob({ now = new Date() } = {}) {
     if (a) report.followUpAlerts += 1;
   }
 
-  // 6. Housekeeping: old finished device commands
+  // 6. Housekeeping: unpaid online-join orders, old finished device commands
+  const expired = await OnlinePayment.updateMany({ kind: 'join', status: 'created', expiresAt: { $lt: now } }, { status: 'expired' });
+  report.joinOrdersExpired = expired.modifiedCount;
   await DeviceCommand.deleteMany({ status: { $in: ['done', 'superseded'] }, updatedAt: { $lt: addDays(today, -30) } });
   // Progress photos uploaded but never saved with a note.
   await PrivateFile.deleteMany({ attached: false, createdAt: { $lt: addDays(now, -1) } });

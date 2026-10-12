@@ -14,6 +14,10 @@ import { inBackground, sendWelcomeEmail, sendInvoiceEmail } from '../notificatio
 import { evaluateCoupon, consumeCoupon } from '../coupons/coupon.service.js';
 import { Coupon } from '../coupons/coupon.model.js';
 import { Company } from '../companies/company.model.js';
+import { logger } from '../../config/logger.js';
+
+// Loaded on use: the referral service itself uses this module (circular import).
+const referrals = () => import('../referrals/referral.service.js');
 
 /** Last valid day (inclusive) for a plan starting on `start`. */
 export function computeEndDate(start, plan) {
@@ -103,6 +107,14 @@ export async function recordPayment({ sub, amount, mode, reference, note, paidAt
     paidAt: paidAt || new Date(),
     receivedBy: user?._id,
   });
+  if (kind === 'subscription') {
+    // A friend's first paid membership earns their referrer free days. Never blocks billing.
+    try {
+      await (await referrals()).onMembershipPaid(updated);
+    } catch (err) {
+      logger.error({ err, subscriptionId: updated._id }, 'referral reward failed');
+    }
+  }
   return { payment, subscription: updated };
 }
 
@@ -120,7 +132,13 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
   if (couponCode) ({ coupon, discount: couponDiscount } = await evaluateCoupon(couponCode, { plan, gross, isNewMember: !everHad }));
   const company = member.companyId ? await Company.findOne({ _id: member.companyId, isActive: true }).lean() : null;
   const companyDiscount = company?.discountPercent ? Math.round((gross * company.discountPercent) / 100) : 0;
-  const totalDiscount = Math.min(gross, discount + couponDiscount + companyDiscount);
+  // Joined with a referral code: optional discount on the first membership.
+  let referralDiscount = 0;
+  if (!everHad && member.referredBy) {
+    const cfg = (await referrals()).referralSettings(gym.settings);
+    if (cfg.enabled && cfg.newMemberDiscountPercent > 0) referralDiscount = Math.round((gross * cfg.newMemberDiscountPercent) / 100);
+  }
+  const totalDiscount = Math.min(gross, discount + couponDiscount + companyDiscount + referralDiscount);
   if (discount < 0 || discount + couponDiscount > gross) throw ApiError.badRequest('Discount cannot exceed the amount');
   const taxPercent = plan.taxPercent ?? gym.taxPercent ?? 0;
   const taxable = gross - totalDiscount;
@@ -134,6 +152,7 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
     coupon,
     company,
     companyDiscount,
+    referralDiscount,
     taxPercent,
     taxAmount,
     totalAmount: taxable + taxAmount,
@@ -216,6 +235,7 @@ export async function createSubscription({
       discount: q.discount,
       manualDiscount: Math.max(0, discount - credit),
       couponDiscount: q.couponDiscount,
+      referralDiscount: q.referralDiscount || undefined,
       approvalId,
       couponCode: q.coupon?.code,
       companyId: q.company?._id,
@@ -263,6 +283,12 @@ export async function createSubscription({
       createdBy: user?._id,
     });
     await refreshMember(fm._id);
+  }
+  // Referral days this member was owed while they had no membership.
+  try {
+    await (await referrals()).applyWaitingRewards(member._id);
+  } catch (err) {
+    logger.error({ err, memberId: member._id }, 'waiting referral reward failed');
   }
   const access = await refreshMember(member._id);
   await inBackground('subscription-emails', async () => {
@@ -335,6 +361,24 @@ async function shiftLater(sub, days) {
     s.endDate = addDays(s.endDate, days);
     await s.save();
   }
+}
+
+/**
+ * Adds free days to a membership (negative takes them back), keeping later memberships and the devices in step.
+ * Used for referral rewards.
+ */
+export async function extendMembership({ subscriptionId, days, reason, referralId }) {
+  const sub = await Subscription.findOne({ _id: subscriptionId, status: 'active' });
+  if (!sub) throw ApiError.notFound('Active membership not found');
+  // Never end before the first day.
+  const change = Math.max(days, -diffDays(sub.startDate, sub.endDate));
+  if (!change) return { subscription: sub, access: null };
+  sub.endDate = addDays(sub.endDate, change);
+  sub.extensions.push({ days: change, reason, referralId });
+  await sub.save();
+  await shiftLater(sub, change);
+  const access = await refreshMember(sub.memberId);
+  return { subscription: sub, access };
 }
 
 /** Freeze days / count allowed on the plan and how much is used. */
@@ -425,5 +469,10 @@ export async function cancel({ subscriptionId, reason }) {
     await refreshMember(l.memberId);
   }
   const access = await refreshMember(sub.memberId);
+  try {
+    await (await referrals()).maybeRevokeReferral(sub._id);
+  } catch (err) {
+    logger.error({ err, subscriptionId: sub._id }, 'referral revoke check failed');
+  }
   return { subscription: sub, access };
 }
