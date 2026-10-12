@@ -26,7 +26,8 @@ const RESEND_AFTER_MS = 30 * 1000;
 export async function sendMemberOtp(phone) {
   const gym = await getGym();
   if (gym.settings?.memberOtpLogin === false) throw ApiError.forbidden('OTP login is disabled. Use your password.');
-  const member = await Member.findOne({ phone, isDeleted: false }).lean();
+  // Trial visitors have no member app.
+  const member = await Member.findOne({ phone, isDeleted: false, isTrial: { $ne: true } }).lean();
   if (!member) return { sent: true };
 
   const recent = await MemberOtp.findOne({ phone, usedAt: null, createdAt: { $gt: new Date(Date.now() - RESEND_AFTER_MS) } });
@@ -53,7 +54,7 @@ export async function verifyMemberOtp(phone, otp) {
   }
   rec.usedAt = new Date();
   await rec.save();
-  const member = await Member.findOneAndUpdate({ phone, isDeleted: false }, { portalEnabled: true }, { returnDocument: 'after' });
+  const member = await Member.findOneAndUpdate({ phone, isDeleted: false, isTrial: { $ne: true } }, { portalEnabled: true }, { returnDocument: 'after' });
   if (!member) throw ApiError.badRequest('Invalid or expired code');
   return member;
 }

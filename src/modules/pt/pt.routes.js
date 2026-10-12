@@ -85,7 +85,7 @@ router.post(
     }),
   }),
   async (req, res) => {
-    const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found', extra: { isDeleted: false } });
+    const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found', extra: { isDeleted: false, isTrial: { $ne: true } } });
     const { approvalId, ...body } = req.body;
     const { result: r, done } = await withDiscountGuard(
       req,

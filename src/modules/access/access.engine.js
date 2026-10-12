@@ -61,6 +61,7 @@ export function computeAccess({ member, subscriptions = [], settings = {}, now =
   if (member?.isBlocked) {
     return deny('BLOCKED', `Access blocked${member.blockReason ? `: ${member.blockReason}` : ''} - contact reception`);
   }
+  if (member?.isTrial) return trialAccess(member, now);
   if (membershipStatus === 'none') return deny('NO_MEMBERSHIP', 'No active membership');
   if (membershipStatus === 'cancelled') return deny('CANCELLED', 'Membership cancelled');
   if (membershipStatus === 'expired') {
@@ -94,6 +95,30 @@ export function computeAccess({ member, subscriptions = [], settings = {}, now =
   };
 }
 
+/**
+ * Trial / guest pass: entry on the pass days only, no grace, no time slot.
+ * membershipStatus stays 'none' so membership counts and lists never include trial visitors.
+ */
+function trialAccess(member, now) {
+  const t = member.trial || {};
+  const today = ymd(now);
+  const window = t.from && t.to ? { from: parseDay(t.from), to: parseDay(t.to) } : null;
+  let trialStatus = 'active';
+  if (!window || t.endedAt || today > ymd(t.to)) trialStatus = 'ended';
+  else if (today < ymd(t.from)) trialStatus = 'upcoming';
+  const base = { membershipStatus: 'none', trialStatus, current: null, window, inGrace: false, dueAmount: 0 };
+  if (trialStatus === 'ended') {
+    const last = t.endedAt && (!t.to || ymd(t.endedAt) <= ymd(t.to)) ? t.endedAt : t.to;
+    return { ...base, allowed: false, code: 'TRIAL_ENDED', reason: last ? `Trial ended on ${dmy(last)}` : 'Trial ended', daysLeft: null, device: deviceState(false, window) };
+  }
+  if (trialStatus === 'upcoming') {
+    // Like an upcoming membership: on the device with a future start date.
+    return { ...base, allowed: false, code: 'TRIAL_NOT_STARTED', reason: `Trial pass starts on ${dmy(t.from)}`, daysLeft: null, device: deviceState(true, window) };
+  }
+  const daysLeft = Math.max(0, diffDays(now, window.to));
+  return { ...base, allowed: true, code: 'TRIAL', reason: `Trial pass valid till ${dmy(t.to)}`, daysLeft, device: deviceState(true, window) };
+}
+
 /** Extends the validity window through back-to-back renewals so the device needs no update on renewal day. */
 function buildWindow(subs, anchor, graceDays) {
   if (!anchor) return null;
@@ -121,4 +146,4 @@ function deviceState(enabled, window, timezoneId = 1) {
   return { enabled: Boolean(enabled && window), validFrom: window?.from || null, validTo: window?.to || null, timezoneId };
 }
 
-export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES', 'OUTSIDE_HOURS'];
+export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES', 'OUTSIDE_HOURS', 'TRIAL_ENDED', 'TRIAL_NOT_STARTED'];

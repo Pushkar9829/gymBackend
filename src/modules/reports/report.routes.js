@@ -25,6 +25,10 @@ import { audienceFilter } from '../notifications/notification.service.js';
 const router = Router();
 router.use(requireStaff);
 
+// Real members only: trial visitors are never in member numbers.
+const MEMBERS = { isDeleted: false, isTrial: { $ne: true } };
+const NOT_TRIAL_VISIT = { isTrial: { $ne: true } };
+
 const sumBy = async (Model, match, field = '$amount') => {
   const r = await Model.aggregate([{ $match: match }, { $group: { _id: null, v: { $sum: field } } }]);
   return r[0]?.v || 0;
@@ -47,28 +51,28 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
     active, frozen, expiring7, expiredLast30, newThisMonth, checkinsToday, deniedToday,
     collectedToday, collectedMonth, refundsMonth, expensesMonth, dueTotal, followUpsDue, alerts, devices, trend,
   ] = await Promise.all([
-    Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: 'active' }),
-    Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: 'frozen' }),
-    Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: 'active', membershipEnd: { $gte: today, $lt: addDays(today, 8) } }),
-    Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: 'expired', membershipEnd: { $gte: addDays(today, -30) } }),
-    Member.countDocuments({ ...bf, isDeleted: false, createdAt: { $gte: monthStart } }),
-    Attendance.countDocuments({ ...bf, day: ymd(today) }),
+    Member.countDocuments({ ...bf, ...MEMBERS, membershipStatus: 'active' }),
+    Member.countDocuments({ ...bf, ...MEMBERS, membershipStatus: 'frozen' }),
+    Member.countDocuments({ ...bf, ...MEMBERS, membershipStatus: 'active', membershipEnd: { $gte: today, $lt: addDays(today, 8) } }),
+    Member.countDocuments({ ...bf, ...MEMBERS, membershipStatus: 'expired', membershipEnd: { $gte: addDays(today, -30) } }),
+    Member.countDocuments({ ...bf, ...MEMBERS, createdAt: { $gte: monthStart } }),
+    Attendance.countDocuments({ ...bf, ...NOT_TRIAL_VISIT, day: ymd(today) }),
     AccessLog.countDocuments({ ...bf, result: 'deny', at: { $gte: today, $lt: tomorrow } }),
     canMoney ? sumBy(Payment, { ...bf, type: 'payment', paidAt: { $gte: today, $lt: tomorrow } }) : null,
     canMoney ? sumBy(Payment, { ...bf, type: 'payment', paidAt: { $gte: monthStart } }) : null,
     canMoney ? sumBy(Payment, { ...bf, type: 'refund', paidAt: { $gte: monthStart } }) : null,
     canMoney ? sumBy(Expense, { ...bf, isDeleted: false, date: { $gte: monthStart } }) : null,
-    canMoney ? sumBy(Member, { ...bf, isDeleted: false, dueAmount: { $gt: 0 } }, '$dueAmount') : null,
+    canMoney ? sumBy(Member, { ...bf, ...MEMBERS, dueAmount: { $gt: 0 } }, '$dueAmount') : null,
     Lead.countDocuments({ ...bf, isDeleted: false, status: { $in: ['new', 'contacted', 'trial'] }, nextFollowUpAt: { $lt: tomorrow } }),
     Notification.find({ ...bf, channel: 'inapp', readAt: null, ...audienceFilter(req) }).sort({ createdAt: -1 }).limit(10).lean(),
     Device.find({ ...bf, isActive: true }).select('name lastSeenAt').lean(),
     Attendance.aggregate([
-      { $match: { ...bf, day: { $gte: ymd(addDays(today, -13)) } } },
+      { $match: { ...bf, ...NOT_TRIAL_VISIT, day: { $gte: ymd(addDays(today, -13)) } } },
       { $group: { _id: '$day', count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]),
   ]);
-  const [openComplaints, lockersOverdue, dayClose, approvals] = await Promise.all([
+  const [openComplaints, lockersOverdue, dayClose, approvals, trials] = await Promise.all([
     can(req.user.role, 'feedback.read') ? Feedback.countDocuments({ ...bf, type: 'complaint', status: { $in: ['open', 'in-progress'] } }) : null,
     can(req.user.role, 'lockers.read') ? LockerAllotment.countDocuments({ ...bf, status: 'active', endDate: { $lt: today } }) : null,
     can(req.user.role, 'cash.close') ? dayCloseStatus(req, bf, ymd(today)) : null,
@@ -77,6 +81,12 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
           DiscountApproval.countDocuments({ ...bf, status: 'pending' }),
           DiscountApproval.find({ ...bf, status: 'pending' }).sort({ createdAt: -1 }).limit(5).populate([{ path: 'memberId', select: 'name memberCode' }, { path: 'requestedBy', select: 'name' }]).lean(),
         ]).then(([pending, items]) => ({ pending, items }))
+      : null,
+    can(req.user.role, 'trials.write')
+      ? Promise.all([
+          Member.countDocuments({ ...bf, isDeleted: false, isTrial: true, 'trial.endedAt': null, 'trial.from': { $lte: today }, 'trial.to': { $gte: today } }),
+          Attendance.countDocuments({ ...bf, isTrial: true, day: ymd(today) }),
+        ]).then(([active, visitsToday]) => ({ active, visitsToday }))
       : null,
   ]);
 
@@ -87,6 +97,7 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
       lockersOverdue,
       dayClose,
       approvals,
+      trials,
       members: { active, frozen, expiringIn7Days: expiring7, expiredLast30Days: expiredLast30, newThisMonth },
       attendance: { checkinsToday, deniedToday, last14Days: trend.map((t) => ({ day: t._id, count: t.count })) },
       money: canMoney
@@ -168,11 +179,11 @@ router.get('/memberships', permit('reports.read'), async (req, res) => {
   const today = startOfDay();
   const days = Math.min(60, Number(req.query.days) || 7);
   const [expiring, recentlyExpired] = await Promise.all([
-    Member.find({ ...bf, isDeleted: false, membershipStatus: { $in: ['active', 'frozen'] }, membershipEnd: { $gte: today, $lt: addDays(today, days + 1) } })
+    Member.find({ ...bf, ...MEMBERS, membershipStatus: { $in: ['active', 'frozen'] }, membershipEnd: { $gte: today, $lt: addDays(today, days + 1) } })
       .sort({ membershipEnd: 1 })
       .select('name memberCode phone membershipEnd currentPlanName dueAmount')
       .lean(),
-    Member.find({ ...bf, isDeleted: false, membershipStatus: 'expired', membershipEnd: { $gte: addDays(today, -days) } })
+    Member.find({ ...bf, ...MEMBERS, membershipStatus: 'expired', membershipEnd: { $gte: addDays(today, -days) } })
       .sort({ membershipEnd: -1 })
       .select('name memberCode phone membershipEnd currentPlanName dueAmount')
       .lean(),
@@ -241,9 +252,9 @@ router.get('/attendance', permit('reports.read'), async (req, res) => {
   const bf = branchFilter(req);
   const { fromDay, toDay } = range(req, 30);
   const [byDay, byHour, denied] = await Promise.all([
-    Attendance.aggregate([{ $match: { ...bf, day: { $gte: fromDay, $lte: toDay } } }, { $group: { _id: '$day', count: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
+    Attendance.aggregate([{ $match: { ...bf, ...NOT_TRIAL_VISIT, day: { $gte: fromDay, $lte: toDay } } }, { $group: { _id: '$day', count: { $sum: 1 } } }, { $sort: { _id: 1 } }]),
     Attendance.aggregate([
-      { $match: { ...bf, day: { $gte: fromDay, $lte: toDay } } },
+      { $match: { ...bf, ...NOT_TRIAL_VISIT, day: { $gte: fromDay, $lte: toDay } } },
       { $group: { _id: { $hour: { date: '$checkInAt', timezone: tz } }, count: { $sum: 1 } } },
       { $sort: { _id: 1 } },
     ]),
@@ -264,13 +275,13 @@ router.get('/branches', permit('reports.read'), async (req, res) => {
   for (const b of branches) {
     const bf = { branchId: b._id };
     const [active, joined, collected, refunded, expenses, visits, dues] = await Promise.all([
-      Member.countDocuments({ ...bf, isDeleted: false, membershipStatus: { $in: ['active', 'frozen'] } }),
-      Member.countDocuments({ ...bf, isDeleted: false, createdAt: { $gte: from, $lt: toExclusive } }),
+      Member.countDocuments({ ...bf, ...MEMBERS, membershipStatus: { $in: ['active', 'frozen'] } }),
+      Member.countDocuments({ ...bf, ...MEMBERS, createdAt: { $gte: from, $lt: toExclusive } }),
       sumBy(Payment, { ...bf, type: 'payment', paidAt: { $gte: from, $lt: toExclusive } }),
       sumBy(Payment, { ...bf, type: 'refund', paidAt: { $gte: from, $lt: toExclusive } }),
       sumBy(Expense, { ...bf, isDeleted: false, date: { $gte: from, $lt: toExclusive } }),
-      Attendance.countDocuments({ ...bf, day: { $gte: fromDay, $lte: toDay } }),
-      sumBy(Member, { ...bf, isDeleted: false, dueAmount: { $gt: 0 } }, '$dueAmount'),
+      Attendance.countDocuments({ ...bf, ...NOT_TRIAL_VISIT, day: { $gte: fromDay, $lte: toDay } }),
+      sumBy(Member, { ...bf, ...MEMBERS, dueAmount: { $gt: 0 } }, '$dueAmount'),
     ]);
     rows.push({ branchId: b._id, name: b.name, activeMembers: active, newMembers: joined, collected, refunded, expenses, profit: collected - refunded - expenses, visits, dues });
   }

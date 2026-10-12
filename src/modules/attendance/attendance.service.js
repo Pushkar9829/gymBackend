@@ -22,7 +22,7 @@ export async function markAttendance({ member, at, method, deviceId, userId, exi
     const row = await Attendance.findOneAndUpdate(
       { memberId: member._id, day },
       {
-        $setOnInsert: { branchId: member.branchId, checkInAt: at, method, deviceId, markedBy: userId },
+        $setOnInsert: { branchId: member.branchId, checkInAt: at, method, deviceId, markedBy: userId, ...(member.isTrial ? { isTrial: true } : {}) },
         $max: { lastPunchAt: at },
         $inc: { punches: 1 },
       },

@@ -12,6 +12,8 @@ import { createAlert } from '../notifications/notification.service.js';
 import { notifyMember } from '../messaging/messaging.service.js';
 import { audit } from '../audit/audit.model.js';
 import { Locker, LockerAllotment, LOCKER_SECTIONS } from './locker.model.js';
+import { lockerReceiptPdf } from './locker.pdf.js';
+import { getGym } from '../settings/gym.model.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -31,7 +33,7 @@ router.get('/', permit('lockers.read'), async (req, res) => {
   const filter = { ...bf };
   if (q.section && LOCKER_SECTIONS.includes(q.section)) filter.section = q.section;
   const lockers = await Locker.find(filter)
-    .populate({ path: 'allotmentId', select: 'memberId startDate endDate deposit', populate: { path: 'memberId', select: 'name memberCode phone' } })
+    .populate({ path: 'allotmentId', select: 'memberId startDate endDate deposit charges', populate: { path: 'memberId', select: 'name memberCode phone' } })
     .lean();
   // Natural order: L2 before L10.
   lockers.sort((a, b) => a.number.localeCompare(b.number, undefined, { numeric: true }));
@@ -184,7 +186,8 @@ router.post(
   async (req, res) => {
     const a = await loadAllotment(req);
     if (req.body.depositReturned > a.deposit) throw ApiError.badRequest('Cannot return more than the deposit held');
-    if (req.body.depositReturned) a.charges.push({ kind: 'deposit-return', amount: req.body.depositReturned, mode: req.body.mode, by: req.user._id });
+    const rno = req.body.depositReturned ? await receiptNo() : null;
+    if (req.body.depositReturned) a.charges.push({ kind: 'deposit-return', amount: req.body.depositReturned, mode: req.body.mode, receiptNo: rno, by: req.user._id });
     a.status = 'ended';
     a.endedAt = new Date();
     a.endedBy = req.user._id;
@@ -192,7 +195,7 @@ router.post(
     await a.save();
     await Locker.updateOne({ _id: a.lockerId, allotmentId: a._id }, { status: 'available', $unset: { allotmentId: 1 } });
     await audit(req, 'locker.release', { entity: 'LockerAllotment', entityId: a._id, branchId: a.branchId, details: { depositReturned: req.body.depositReturned } });
-    res.json({ success: true, data: a });
+    res.json({ success: true, data: { ...a.toObject(), receiptNo: rno } });
   },
 );
 
@@ -207,6 +210,19 @@ router.get('/allotments', permit('lockers.read'), async (req, res) => {
     .populate([{ path: 'lockerId', select: 'number section' }, { path: 'memberId', select: 'name memberCode' }])
     .lean();
   res.json({ success: true, data: list });
+});
+
+/** Receipt PDF for one receipt number of an allotment (default: the latest one). A4 or thermal roll per Settings. */
+router.get('/allotments/:id/receipt.pdf', permit('lockers.read'), async (req, res) => {
+  const a = await findInBranch(req, LockerAllotment, req.params.id, { notFound: 'Allotment not found' });
+  const numbers = a.charges.map((c) => c.receiptNo).filter(Boolean);
+  const no = req.query.no ? String(req.query.no) : numbers[numbers.length - 1];
+  if (!no || !numbers.includes(no)) throw ApiError.notFound('No receipt for this locker');
+  await a.populate([{ path: 'lockerId', select: 'number section' }, { path: 'memberId', select: 'name memberCode' }, { path: 'charges.by', select: 'name' }]);
+  const pdf = await lockerReceiptPdf(a.toObject(), no, await getGym());
+  res.setHeader('Content-Type', 'application/pdf');
+  res.setHeader('Content-Disposition', `inline; filename="${no.replace(/\//g, '-')}.pdf"`);
+  res.send(pdf);
 });
 
 /* ---------------- Member app (/me/locker) ---------------- */

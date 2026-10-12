@@ -13,6 +13,7 @@ const attendanceSchema = new mongoose.Schema(
     method: { type: String, enum: ['biometric', 'qr', 'manual'], required: true },
     deviceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Device' },
     markedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    isTrial: Boolean, // visit on a trial pass: not counted in member check-in numbers
   },
   { timestamps: true },
 );

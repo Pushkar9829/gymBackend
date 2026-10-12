@@ -37,6 +37,15 @@ const schema = z
         discountLimitPercent: z.number().min(0).max(100),
         cashShortAlert: z.number().int().min(0).max(100000000),
         retentionGraceDays: z.number().int().min(0).max(90),
+        receiptPaper: z.enum(['a4', '80mm', '58mm']),
+        trial: z
+          .object({
+            enabled: z.boolean(),
+            defaultDays: z.number().int().min(1).max(3),
+            maxDays: z.number().int().min(1).max(3),
+            repeatDays: z.number().int().min(0).max(365),
+          })
+          .partial(),
       })
       .partial(),
   })
@@ -48,10 +57,15 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
   const { settings, ...rest } = req.body;
   Object.assign(gym, rest);
   if (settings) {
-    const { channels, payroll, ...rest } = settings;
+    const { channels, payroll, trial, ...rest } = settings;
     Object.assign(gym.settings, rest);
     if (channels) Object.assign(gym.settings.channels, channels);
     if (payroll) Object.assign(gym.settings.payroll, payroll);
+    if (trial) {
+      gym.settings.trial ||= {};
+      Object.assign(gym.settings.trial, trial);
+      if (gym.settings.trial.defaultDays > gym.settings.trial.maxDays) gym.settings.trial.defaultDays = gym.settings.trial.maxDays;
+    }
   }
   await gym.save();
   await audit(req, 'settings.update', { entity: 'Gym', entityId: gym._id, details: req.body });

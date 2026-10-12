@@ -18,6 +18,8 @@ export const PERMISSIONS = [
   'lockers.read', 'lockers.write', 'lockers.manage',
   'feedback.read', 'feedback.write',
   'cash.close', 'cash.manage', 'discounts.approve',
+  'trials.write', 'trials.override',
+  'handover.read', 'handover.write', 'handover.manage',
   'users.read', 'users.write',
   'branches.write', 'settings.write',
 ];
@@ -32,8 +34,10 @@ export const ROLES = {
     'pt.read', 'pt.sell', 'pt.log', 'fitness.read',
     'classes.read', 'classes.book', 'classes.attendance', 'shop.sell', 'equipment.read',
     'lockers.read', 'lockers.write', 'feedback.read', 'feedback.write', 'cash.close',
+    'trials.write', 'handover.read', 'handover.write',
   ],
-  trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write', 'classes.read', 'classes.attendance', 'equipment.read'],
+  // Trainers read the handover board and acknowledge notes; posting is for the front desk.
+  trainer: ['dashboard.read', 'members.read', 'plans.read', 'attendance.read', 'pt.read', 'pt.log', 'fitness.read', 'fitness.write', 'classes.read', 'classes.attendance', 'equipment.read', 'handover.read'],
 };
 
 export const ROLE_NAMES = Object.keys(ROLES);

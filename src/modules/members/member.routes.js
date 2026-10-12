@@ -59,6 +59,8 @@ router.get('/', permit('members.read'), async (req, res) => {
   const q = req.query;
   const showDeleted = q.deleted === 'true' && can(req.user.role, 'members.delete');
   const filter = { isDeleted: showDeleted, ...branchFilter(req), ...(await trainerMemberFilter(req.user)) };
+  // Trial visitors have their own list; the check-in desk searches both.
+  if (!(q.includeTrials === 'true' && can(req.user.role, 'attendance.write'))) filter.isTrial = { $ne: true };
   if (q.status && MEMBERSHIP_STATUS.includes(q.status)) filter.membershipStatus = q.status;
   if (q.blocked === 'true') filter.isBlocked = true;
   if (q.due === 'true') filter.dueAmount = { $gt: 0 };
@@ -82,7 +84,8 @@ router.get('/', permit('members.read'), async (req, res) => {
 router.post('/', permit('members.write'), validate({ body: memberBody.extend({ portalPassword: z.string().min(8).optional() }) }), async (req, res) => {
   assertBranchAccess(req, req.body.branchId);
   const { portalPassword, ...data } = req.body;
-  const existing = await Member.findOne({ phone: data.phone, isDeleted: false }).select('name memberCode').lean();
+  const existing = await Member.findOne({ phone: data.phone, isDeleted: false }).select('name memberCode isTrial').lean();
+  if (existing?.isTrial) throw ApiError.conflict(`${existing.name} (#${existing.memberCode}) has a trial pass. Open Trials and use Convert to member.`);
   if (existing && !req.query.allowDuplicatePhone) {
     throw ApiError.conflict(`Phone already registered to ${existing.name} (#${existing.memberCode})`);
   }
@@ -220,6 +223,7 @@ router.post(
   async (req, res) => {
     const member = await Member.findOne({ _id: req.params.id, isDeleted: false }).select('+passwordHash');
     if (!member) throw ApiError.notFound('Member not found');
+    if (member.isTrial && req.body.enabled) throw ApiError.badRequest('Trial visitors have no member app. Convert to member first.');
     assertBranchAccess(req, member.branchId);
     if (req.body.enabled && !req.body.password && !member.passwordHash) throw ApiError.badRequest('Set a password to enable portal access');
     member.portalEnabled = req.body.enabled;

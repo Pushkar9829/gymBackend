@@ -83,7 +83,7 @@ export async function sendInvoiceEmail(invoiceId) {
 
 export async function sendReceiptEmail(paymentId) {
   const payment = await Payment.findById(paymentId).populate(['memberId', 'subscriptionId', 'ptPurchaseId']).lean();
-  if (!payment?.memberId) return;
+  if (!payment?.memberId || payment.trialFee || payment.memberId.isTrial) return; // trial visitors get no messages
   const isRefund = payment.type === 'refund';
   if (!isRefund) {
     await notifyMember({

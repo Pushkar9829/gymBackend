@@ -73,7 +73,7 @@ router.post('/', permit('members.write'), validate({ body }), async (req, res) =
   const scope = branchId
     ? { branchId: new mongoose.Types.ObjectId(branchId) }
     : branchFilter({ allowedBranchIds: req.allowedBranchIds, query: {} });
-  const filter = { isDeleted: false, ...scope, ...audienceFilter(audience) };
+  const filter = { isDeleted: false, isTrial: { $ne: true }, ...scope, ...audienceFilter(audience) };
   const total = await Member.countDocuments(filter);
   if (preview) return res.json({ success: true, data: { total } });
 

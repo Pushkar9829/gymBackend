@@ -152,6 +152,7 @@ export async function createSubscription({
     getGym(),
   ]);
   if (!member) throw ApiError.notFound('Member not found');
+  if (member.isTrial) throw ApiError.badRequest(`${member.name} is on a trial pass. Convert to member first.`);
   if (!plan) throw ApiError.notFound('Plan not found or inactive');
   if (plan.branchIds?.length && !plan.branchIds.map(String).includes(String(member.branchId))) {
     throw ApiError.badRequest("This plan is not available in the member's branch");
@@ -175,6 +176,7 @@ export async function createSubscription({
     for (const id of uniqueFamily) {
       const fm = await Member.findOne({ _id: id, isDeleted: false }).lean();
       if (!fm) throw ApiError.notFound('Family member not found');
+      if (fm.isTrial) throw ApiError.badRequest(`${fm.name} is on a trial pass. Convert to member first.`);
       if (String(fm.branchId) !== String(member.branchId)) throw ApiError.badRequest(`${fm.name} belongs to another branch`);
       try {
         assertNoOverlap(await liveSubs(fm._id).lean(), start, end);

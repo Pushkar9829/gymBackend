@@ -57,6 +57,27 @@ const memberSchema = new mongoose.Schema(
     dueAmount: { type: Number, default: 0 },
     lastVisitAt: Date,
 
+    // Trial / guest pass visitor: same record type so check-in, QR and the biometric devices work unchanged,
+    // but kept out of member counts, reports and messaging. Converting clears isTrial and keeps the history.
+    isTrial: { type: Boolean, default: false },
+    trial: {
+      from: Date, // first day
+      to: Date, // last day included
+      days: Number,
+      fee: Number, // paise
+      paymentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Payment' },
+      leadId: { type: mongoose.Schema.Types.ObjectId, ref: 'Lead' },
+      issuedAt: Date,
+      issuedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      override: Boolean, // repeat rule overridden by owner/manager
+      overrideReason: String,
+      count: Number, // trials given to this number so far
+      endedAt: Date, // ended early by staff
+      endedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+      convertedAt: Date,
+      convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    },
+
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true },
@@ -65,6 +86,7 @@ const memberSchema = new mongoose.Schema(
 memberSchema.index({ branchId: 1, membershipStatus: 1 });
 memberSchema.index({ branchId: 1, membershipEnd: 1 });
 memberSchema.index({ phone: 1 });
+memberSchema.index({ isTrial: 1, branchId: 1, 'trial.to': -1 });
 memberSchema.index({ name: 'text', phone: 'text', email: 'text' });
 
 memberSchema.set('toJSON', {

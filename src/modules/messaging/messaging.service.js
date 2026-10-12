@@ -44,6 +44,7 @@ export async function sendMessage({ to, member, channel, template, vars, dedupeK
  * `gym` may be passed to avoid re-reading settings in loops.
  */
 export async function notifyMember({ member, template, vars = {}, dedupeKey, gym, channels }) {
+  if (member?.isTrial) return []; // trial visitors are not on member messaging
   gym = gym || (await getGym());
   const on = channels || ['sms', 'whatsapp'].filter((c) => gym.settings?.channels?.[c]);
   const results = [];

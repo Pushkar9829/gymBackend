@@ -112,18 +112,22 @@ router.post(
     const refundable = original.amount - (refunded[0]?.total || 0);
     if (req.body.amount > refundable) throw ApiError.badRequest(`Maximum refundable is Rs. ${toRupees(refundable)}`);
 
-    const { Model, id, field } = billOf(original);
-    const sub = await Model.findById(id);
-    // Refund on a running membership / package re-opens the due; on a cancelled one it doesn't.
-    const inc = { paidAmount: -req.body.amount, ...(sub.status === 'active' ? { dueAmount: req.body.amount } : {}) };
-    await Model.updateOne({ _id: sub._id }, { $inc: inc });
+    let billRef = { trialFee: true };
+    if (!original.trialFee) {
+      const { Model, id, field } = billOf(original);
+      const sub = await Model.findById(id);
+      // Refund on a running membership / package re-opens the due; on a cancelled one it doesn't.
+      const inc = { paidAmount: -req.body.amount, ...(sub.status === 'active' ? { dueAmount: req.body.amount } : {}) };
+      await Model.updateOne({ _id: sub._id }, { $inc: inc });
+      billRef = { [field]: id };
+    }
 
     const gym = await getGym();
     const refund = await Payment.create({
       receiptNo: await nextReceiptNo(gym),
       memberId: original.memberId,
       branchId: original.branchId,
-      [field]: id,
+      ...billRef,
       invoiceId: original.invoiceId,
       type: 'refund',
       amount: req.body.amount,
@@ -146,7 +150,7 @@ router.post(
 
 router.get('/:id/receipt.pdf', permit('payments.read'), async (req, res) => {
   const payment = await findInBranch(req, Payment, req.params.id, { notFound: 'Payment not found' });
-  await payment.populate(['memberId', 'subscriptionId', 'ptPurchaseId']);
+  await payment.populate(['memberId', 'subscriptionId', 'ptPurchaseId', { path: 'receivedBy', select: 'name' }]);
   const pdf = await receiptPdf(payment.toObject(), await getGym());
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${payment.receiptNo.replace(/\//g, '-')}.pdf"`);

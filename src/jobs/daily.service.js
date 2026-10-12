@@ -98,7 +98,7 @@ export async function runDailyJob({ now = new Date() } = {}) {
   // 4. Birthday wishes
   const md = dayjs(today).tz(tz).format('MM-DD');
   const bdays = await Member.aggregate([
-    { $match: { isDeleted: false, dob: { $ne: null }, membershipStatus: { $in: ['active', 'frozen'] } } },
+    { $match: { isDeleted: false, isTrial: { $ne: true }, dob: { $ne: null }, membershipStatus: { $in: ['active', 'frozen'] } } },
     { $match: { $expr: { $eq: [{ $dateToString: { format: '%m-%d', date: '$dob', timezone: tz } }, md] } } },
   ]);
   for (const member of bdays) {
@@ -152,9 +152,9 @@ async function sendOwnerSummary(gym, from, to) {
   if (!owners.length) return;
   const [collected, checkins, denied, expiring, branches, closings, pendingApprovals] = await Promise.all([
     Payment.aggregate([{ $match: { type: 'payment', paidAt: { $gte: from, $lt: to } } }, { $group: { _id: null, v: { $sum: '$amount' } } }]),
-    Attendance.countDocuments({ day: ymd(from) }),
+    Attendance.countDocuments({ day: ymd(from), isTrial: { $ne: true } }),
     AccessLog.countDocuments({ result: 'deny', at: { $gte: from, $lt: to } }),
-    Member.countDocuments({ isDeleted: false, membershipStatus: 'active', membershipEnd: { $gte: to, $lt: addDays(to, 7) } }),
+    Member.countDocuments({ isDeleted: false, isTrial: { $ne: true }, membershipStatus: 'active', membershipEnd: { $gte: to, $lt: addDays(to, 7) } }),
     Branch.find({ isActive: { $ne: false } }).select('name').lean(),
     CashClosing.find({ day: ymd(from) }).lean(),
     DiscountApproval.countDocuments({ status: 'pending' }),

@@ -11,6 +11,7 @@ import { nextSeq } from '../../utils/counter.js';
 import { Lead, LEAD_STATUS, LEAD_SOURCES } from './lead.model.js';
 import { Member } from '../members/member.model.js';
 import { audit } from '../audit/audit.model.js';
+import { convertTrial } from '../trials/trial.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -102,6 +103,8 @@ router.post('/:id/convert', permit('leads.write', 'members.write'), async (req, 
   const lead = await findInBranch(req, Lead, req.params.id, { notFound: 'Lead not found', extra: { isDeleted: false } });
   if (lead.status === 'converted') throw ApiError.badRequest('Lead already converted');
   let member = await Member.findOne({ phone: lead.phone, isDeleted: false });
+  // A trial visitor joining: keep the same record and visit history.
+  if (member?.isTrial) ({ member } = await convertTrial(member, req.user));
   if (!member) {
     member = await Member.create({
       branchId: lead.branchId,

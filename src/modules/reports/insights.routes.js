@@ -257,12 +257,12 @@ export async function retention(req, { months = 6, graceDays = 15, inactiveDays 
   const cutoff = addDays(today, -inactiveDays);
   const fields = 'name memberCode phone currentPlanName membershipEnd lastVisitAt';
   const [inactive, expiring] = await Promise.all([
-    Member.find({ ...bf, isDeleted: false, membershipStatus: 'active', $or: [{ lastVisitAt: { $lt: cutoff } }, { lastVisitAt: null, membershipStart: { $lt: cutoff } }] })
+    Member.find({ ...bf, isDeleted: false, isTrial: { $ne: true }, membershipStatus: 'active', $or: [{ lastVisitAt: { $lt: cutoff } }, { lastVisitAt: null, membershipStart: { $lt: cutoff } }] })
       .sort({ lastVisitAt: 1 })
       .limit(500)
       .select(fields)
       .lean(),
-    Member.find({ ...bf, isDeleted: false, membershipStatus: 'active', membershipEnd: { $gte: today, $lt: addDays(today, 8) } }).sort({ membershipEnd: 1 }).limit(500).select(fields).lean(),
+    Member.find({ ...bf, isDeleted: false, isTrial: { $ne: true }, membershipStatus: 'active', membershipEnd: { $gte: today, $lt: addDays(today, 8) } }).sort({ membershipEnd: 1 }).limit(500).select(fields).lean(),
   ]);
   const totals = rows.reduce((t, r) => ({ ended: t.ended + r.ended, renewed: t.renewed + r.renewed, lost: t.lost + r.lost, pending: t.pending + r.pending }), { ended: 0, renewed: 0, lost: 0, pending: 0 });
   return {

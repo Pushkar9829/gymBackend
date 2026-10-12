@@ -48,6 +48,8 @@ import companyRoutes from './modules/companies/company.routes.js';
 import lockerRoutes, { portalLockerRouter } from './modules/lockers/locker.routes.js';
 import { feedbackRouter, portalFeedbackRouter } from './modules/feedback/feedback.routes.js';
 import { portalPayRouter, staffOnlineRouter, webhookRouter } from './modules/online/online.routes.js';
+import trialRoutes from './modules/trials/trial.routes.js';
+import handoverRoutes from './modules/handover/handover.routes.js';
 import { runDailyJob } from './jobs/daily.service.js';
 
 export function createApp() {
@@ -133,6 +135,8 @@ export function createApp() {
   api.use('/companies', companyRoutes);
   api.use('/lockers', lockerRoutes);
   api.use('/feedback', feedbackRouter);
+  api.use('/trials', trialRoutes);
+  api.use('/handover', handoverRoutes);
   api.use('/online-payments', staffOnlineRouter);
   api.use('/me', portalPayRouter);
   api.use('/me', portalClassRouter);

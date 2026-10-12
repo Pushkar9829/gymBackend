@@ -1,6 +1,7 @@
 import { createRequire } from 'node:module';
 import { formatINR } from '../../utils/money.js';
 import { dmy } from '../../utils/dates.js';
+import { isThermal, thermalReceipt, gstLines } from './thermal.pdf.js';
 
 const require = createRequire(import.meta.url);
 const PdfPrinter = require('pdfmake');
@@ -89,6 +90,28 @@ export function receiptPdf(payment, gym) {
   const s = payment.subscriptionId || payment.ptPurchaseId || {};
   const isPt = Boolean(payment.ptPurchaseId);
   const isRefund = payment.type === 'refund';
+  if (isThermal(gym)) return thermalPaymentReceipt(payment, gym);
+  if (payment.trialFee) {
+    return render({
+      content: [
+        ...header({ name: gym.name, address: gym.address, phone: gym.phone, email: gym.email, gstin: gym.gstin }, isRefund ? 'REFUND RECEIPT' : 'PAYMENT RECEIPT', payment.receiptNo, payment.paidAt),
+        {
+          table: {
+            widths: [140, '*'],
+            body: [
+              ['Visitor', `${m.name} (#${m.memberCode})`],
+              ['Trial pass', m.trial?.from ? `${dmy(m.trial.from)} to ${dmy(m.trial.to)}` : payment.note || '-'],
+              [isRefund ? 'Amount refunded' : 'Amount received', { text: formatINR(payment.amount), bold: true }],
+              ['Mode', String(payment.mode).toUpperCase()],
+              ['Reference', payment.reference || '-'],
+            ],
+          },
+          layout: 'lightHorizontalLines',
+        },
+        { text: 'Thank you!', margin: [0, 20, 0, 0] },
+      ],
+    });
+  }
   return render({
     content: [
       ...header({ name: gym.name, address: gym.address, phone: gym.phone, email: gym.email, gstin: gym.gstin }, isRefund ? 'REFUND RECEIPT' : 'PAYMENT RECEIPT', payment.receiptNo, payment.paidAt),
@@ -111,5 +134,36 @@ export function receiptPdf(payment, gym) {
       },
       { text: 'Thank you!', margin: [0, 20, 0, 0] },
     ],
+  });
+}
+
+/** Payment / refund receipt on a thermal roll. */
+function thermalPaymentReceipt(payment, gym) {
+  const m = payment.memberId || {};
+  const isRefund = payment.type === 'refund';
+  const party = `${m.isTrial || payment.trialFee ? 'Visitor' : 'Member'}: ${m.name || '-'} (#${m.memberCode || '-'})`;
+  const base = { number: payment.receiptNo, date: payment.paidAt, party, mode: payment.mode, receivedBy: payment.receivedBy?.name, note: payment.reference ? `Ref: ${payment.reference}` : undefined };
+  if (isRefund) {
+    return thermalReceipt(gym, { ...base, title: 'REFUND RECEIPT', lines: [{ name: payment.note ? `Refund: ${payment.note}` : 'Refund', amount: payment.amount }], totalLabel: 'REFUNDED', total: payment.amount });
+  }
+  if (payment.trialFee) {
+    const t = m.trial || {};
+    return thermalReceipt(gym, { ...base, title: 'PAYMENT RECEIPT', lines: [{ name: t.from ? `Trial pass ${dmy(t.from)} to ${dmy(t.to)}` : 'Trial pass', amount: payment.amount }], totalLabel: 'RECEIVED', total: payment.amount });
+  }
+  const isPt = Boolean(payment.ptPurchaseId);
+  const s = payment.subscriptionId || payment.ptPurchaseId || {};
+  const billTotal = s.totalAmount || 0;
+  const tax = s.taxAmount || 0;
+  const name = isPt
+    ? `PT: ${s.package?.name || '-'}${s.sessionsTotal ? ` (${s.sessionsTotal} sessions)` : ''}`
+    : `${s.plan?.name || 'Membership'}${s.startDate ? ` (${dmy(s.startDate)} to ${dmy(s.endDate)})` : ''}`;
+  return thermalReceipt(gym, {
+    ...base,
+    title: 'PAYMENT RECEIPT',
+    lines: [{ name, amount: billTotal - tax }],
+    taxLines: [...gstLines(tax, s.taxPercent), { label: 'Bill total', amount: billTotal }],
+    totalLabel: 'RECEIVED',
+    total: payment.amount,
+    extra: [{ label: 'Balance due', amount: s.dueAmount || 0 }],
   });
 }

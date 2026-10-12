@@ -1,7 +1,26 @@
 import { render, header } from '../invoices/invoice.pdf.js';
 import { formatINR } from '../../utils/money.js';
+import { isThermal, thermalReceipt, gstLines } from '../invoices/thermal.pdf.js';
 
 export function saleReceiptPdf(sale, gym) {
+  if (isThermal(gym)) {
+    return thermalReceipt(gym, {
+      title: sale.status === 'refunded' ? 'SALE (REFUNDED)' : 'TAX INVOICE',
+      number: sale.saleNo,
+      date: sale.createdAt,
+      party: `Customer: ${sale.memberId ? `${sale.memberId.name} (#${sale.memberId.memberCode})` : sale.customerName || 'Walk-in'}`,
+      lines: sale.items.map((i) => ({ name: i.name, qty: i.qty, rate: i.unitPrice, amount: i.amount })),
+      taxLines: [
+        { label: 'Sub total', amount: sale.subTotal },
+        ...(sale.discount ? [{ label: 'Discount', text: `- ${formatINR(sale.discount)}` }] : []),
+        ...gstLines(sale.taxAmount),
+      ],
+      total: sale.total,
+      mode: sale.mode,
+      receivedBy: sale.soldBy?.name,
+      note: sale.reference ? `Ref: ${sale.reference}` : undefined,
+    });
+  }
   const half = Math.round(sale.taxAmount / 2);
   const rows = [
     [{ text: 'Item', bold: true }, { text: 'Qty', bold: true, alignment: 'right' }, { text: 'Rate', bold: true, alignment: 'right' }, { text: 'Amount', bold: true, alignment: 'right' }],

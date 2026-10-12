@@ -34,6 +34,15 @@ const gymSchema = new mongoose.Schema(
       discountLimitPercent: { type: Number, default: 10, min: 0, max: 100 }, // receptionist max without approval
       cashShortAlert: { type: Number, default: 10000, min: 0 }, // paise: alert when the drawer is short by more
       retentionGraceDays: { type: Number, default: 15, min: 0, max: 90 }, // renewal window after a membership ends
+      // Receipt PDFs: A4 page or a thermal roll (80 / 58 mm).
+      receiptPaper: { type: String, enum: ['a4', '80mm', '58mm'], default: 'a4' },
+      // Free / paid trial passes for leads and walk-ins.
+      trial: {
+        enabled: { type: Boolean, default: true },
+        defaultDays: { type: Number, default: 1, min: 1, max: 3 },
+        maxDays: { type: Number, default: 3, min: 1, max: 3 },
+        repeatDays: { type: Number, default: 90, min: 0, max: 365 }, // one trial per phone number in this many days
+      },
     },
   },
   { timestamps: true },

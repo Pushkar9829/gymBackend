@@ -178,7 +178,7 @@ router.post('/sales/:id/refund', permit('payments.refund'), validate({ body: z.o
 
 router.get('/sales/:id/receipt.pdf', permit('shop.sell'), async (req, res) => {
   const sale = await findInBranch(req, Sale, req.params.id, { notFound: 'Sale not found' });
-  await sale.populate('memberId', 'name memberCode');
+  await sale.populate([{ path: 'memberId', select: 'name memberCode' }, { path: 'soldBy', select: 'name' }]);
   const pdf = await saleReceiptPdf(sale.toObject(), await getGym());
   res.setHeader('Content-Type', 'application/pdf');
   res.setHeader('Content-Disposition', `inline; filename="${sale.saleNo.replace(/\//g, '-')}.pdf"`);

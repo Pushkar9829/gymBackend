@@ -17,7 +17,7 @@ import { staffCheckIn } from './attendance.service.js';
 const router = Router();
 router.use(requireStaff);
 
-const memberProjection = 'name memberCode phone photoUrl membershipStatus membershipEnd currentPlanName dueAmount isBlocked branchId';
+const memberProjection = 'name memberCode phone photoUrl membershipStatus membershipEnd currentPlanName dueAmount isBlocked isTrial branchId';
 
 router.post(
   '/check-in',
@@ -58,7 +58,7 @@ router.post(
         reason: result.access.reason,
         daysLeft: result.access.daysLeft,
         dueAmount: result.access.dueAmount,
-        member: { _id: member._id, name: member.name, memberCode: member.memberCode, photoUrl: member.photoUrl, phone: member.phone },
+        member: { _id: member._id, name: member.name, memberCode: member.memberCode, photoUrl: member.photoUrl, phone: member.phone, isTrial: Boolean(member.isTrial) },
         attendance: result.attendance,
       },
     });
