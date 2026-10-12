@@ -12,6 +12,7 @@
     "start": "node src/server.js",
     "job:daily": "node --env-file-if-exists=.env src/jobs/daily.js",
     "seed": "node --env-file-if-exists=.env src/scripts/seed.js",
+    "migrate:private-files": "node --env-file-if-exists=.env src/scripts/migrate-private-files.js",
     "test": "node --test --test-concurrency=1 \"tests/**/*.test.js\"",
     "lint": "eslint src tests"
   },

@@ -1,7 +1,7 @@
 // Role -> permission map. Owner has everything ('*').
 export const PERMISSIONS = [
   'dashboard.read', 'reports.read', 'audit.read',
-  'members.read', 'members.write', 'members.delete',
+  'members.read', 'members.write', 'members.delete', 'members.documents',
   'plans.read', 'plans.write',
   'subscriptions.write', 'subscriptions.cancel',
   'payments.read', 'payments.create', 'payments.refund',
@@ -28,7 +28,7 @@ export const ROLES = {
   owner: ['*'],
   manager: PERMISSIONS.filter((p) => !['branches.write', 'settings.write'].includes(p)),
   receptionist: [
-    'dashboard.read', 'members.read', 'members.write', 'plans.read', 'subscriptions.write',
+    'dashboard.read', 'members.read', 'members.write', 'members.documents', 'plans.read', 'subscriptions.write',
     'payments.read', 'payments.create', 'attendance.read', 'attendance.write',
     'leads.read', 'leads.write', 'expenses.read', 'expenses.write', 'devices.read',
     'pt.read', 'pt.sell', 'pt.log', 'fitness.read',

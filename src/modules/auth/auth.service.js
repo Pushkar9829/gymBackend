@@ -57,6 +57,7 @@ const publicMember = (m) => ({
   email: m.email,
   memberCode: m.memberCode,
   photoUrl: m.photoUrl,
+  photoFileId: m.photoFileId,
   branchId: m.branchId,
 });
 

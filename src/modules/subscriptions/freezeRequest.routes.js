@@ -24,7 +24,7 @@ export const freezeRequestRouter = Router();
 freezeRequestRouter.use(requireStaff, permit('subscriptions.write'));
 
 const POPULATE = [
-  { path: 'memberId', select: 'name memberCode phone photoUrl' },
+  { path: 'memberId', select: 'name memberCode phone photoUrl photoFileId' },
   { path: 'subscriptionId', select: 'plan startDate endDate freezes status' },
   { path: 'decidedBy', select: 'name' },
 ];

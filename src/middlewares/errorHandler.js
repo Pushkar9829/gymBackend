@@ -26,6 +26,9 @@ export function errorHandler(err, req, res, _next) {
   } else if (err.type === 'entity.parse.failed') {
     status = 400;
     message = 'Invalid JSON body';
+  } else if (err.type === 'entity.too.large') {
+    status = 413;
+    message = 'File is too large';
   }
 
   if (status >= 500) {

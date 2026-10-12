@@ -18,7 +18,7 @@ const objectId = z.string().refine((v) => mongoose.isValidObjectId(v), 'Invalid 
 const hhmm = z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Use HH:MM');
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use YYYY-MM-DD');
 const POPULATE = [
-  { path: 'memberId', select: 'name memberCode phone photoUrl' },
+  { path: 'memberId', select: 'name memberCode phone photoUrl photoFileId' },
   { path: 'trainerId', select: 'name' },
   { path: 'ptPurchaseId', select: 'package.name sessionsTotal sessionsUsed validTo' },
 ];

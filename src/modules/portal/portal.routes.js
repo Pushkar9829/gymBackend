@@ -35,7 +35,7 @@ router.get('/', async (req, res) => {
     data: {
       member: {
         _id: m._id, name: m.name, phone: m.phone, email: m.email, memberCode: m.memberCode,
-        photoUrl: m.photoUrl, joinedAt: m.joinedAt, dueAmount: m.dueAmount,
+        photoUrl: m.photoUrl, photoFileId: m.photoFileId, joinedAt: m.joinedAt, dueAmount: m.dueAmount,
       },
       gym: { name: gym.name, logoUrl: gym.logoUrl, phone: gym.phone },
       branch,

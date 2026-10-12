@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import express, { Router } from 'express';
 import { z } from 'zod';
 import mongoose from 'mongoose';
 import QRCode from 'qrcode';
@@ -26,6 +26,7 @@ import { getGym } from '../settings/gym.model.js';
 import { Referral } from '../referrals/referral.model.js';
 import { ensureReferralCode, resolveReferrer, attachReferral } from '../referrals/referral.service.js';
 import { PushSubscription } from '../push/push.service.js';
+import { PrivateFile, MAX_PRIVATE_BYTES, MAX_DOCUMENT_BYTES, MAX_THUMB_BYTES, savePrivateImage, savePrivateDocument, checkThumb } from '../uploads/privateFile.model.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -41,7 +42,6 @@ const memberBody = z.object({
   email: z.string().trim().email().optional().or(z.literal('').transform(() => undefined)),
   gender: z.enum(['male', 'female', 'other']).optional(),
   dob: z.coerce.date().optional(),
-  photoUrl: z.string().url().optional().or(z.literal('').transform(() => undefined)),
   address: optionalStr(300),
   emergencyContact: z.object({ name: optionalStr(80), phone: optionalStr(15), relation: optionalStr(40) }).optional(),
   healthNotes: optionalStr(1000),
@@ -82,7 +82,7 @@ router.get('/', permit('members.read'), async (req, res) => {
     if (/^[A-Za-z0-9]{6}$/.test(s)) filter.$or.push({ referralCode: s.toUpperCase() }); // a friend's referral code
   }
   const sort = q.sort === 'name' ? { name: 1 } : q.sort === 'end' ? { membershipEnd: 1 } : { createdAt: -1 };
-  const data = await paginate(Member, filter, q, { sort, populate: { path: 'trainerId', select: 'name' } });
+  const data = await paginate(Member, filter, q, { sort, select: '-documents', populate: { path: 'trainerId', select: 'name' } });
   res.json({ success: true, data });
 });
 
@@ -145,9 +145,12 @@ router.get('/:id', permit('members.read'), async (req, res) => {
     Referral.countDocuments({ referrerId: member._id, status: 'rewarded' }),
   ]);
   subscriptions.sort((a, b) => new Date(b.startDate) - new Date(a.startDate));
+  // ID proofs and other documents: only for roles that may open them (not trainers).
+  const memberOut = member.toJSON();
+  if (!can(req.user.role, 'members.documents')) delete memberOut.documents;
   res.json({
     success: true,
-    data: { member, access: { ...access, current: undefined }, subscriptions, deviceUsers, referral: { record: referral, friendsRewarded: referred } },
+    data: { member: memberOut, access: { ...access, current: undefined }, subscriptions, deviceUsers, referral: { record: referral, friendsRewarded: referred } },
   });
 });
 
@@ -181,28 +184,68 @@ router.delete('/:id', permit('members.delete'), async (req, res) => {
   res.json({ success: true });
 });
 
+/* ---------- Documents (ID proof, medical...) and profile photo: private files, never public links ---------- */
+const DOC_KINDS = ['id-proof', 'medical', 'waiver', 'photo', 'other'];
+const IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+
+// Raw file body (PDF or image, the browser shrinks images first). ?name=...&kind=id-proof
 router.post(
   '/:id/documents',
-  permit('members.write'),
-  validate({ body: z.object({ name: z.string().trim().min(1).max(80), kind: z.enum(['id-proof', 'medical', 'waiver', 'photo', 'other']).default('other'), url: z.string().url() }) }),
+  permit('members.write', 'members.documents'),
+  express.raw({ type: ['application/pdf', ...IMAGE_TYPES, 'application/octet-stream'], limit: MAX_DOCUMENT_BYTES }),
+  validate({ query: z.object({ name: z.string().trim().min(1).max(80), kind: z.enum(DOC_KINDS).default('other') }) }),
   async (req, res) => {
     const member = await loadMember(req, req.params.id);
     if (member.documents.length >= 20) throw ApiError.badRequest('Maximum 20 documents per member');
-    member.documents.push({ ...req.body, uploadedBy: req.user._id });
+    const { name, kind } = req.validQuery;
+    const file = await savePrivateDocument({ buffer: req.body, member, user: req.user, name });
+    member.documents.push({ name, kind, fileId: file._id, contentType: file.contentType, size: file.size, uploadedBy: req.user._id });
     await member.save();
-    await audit(req, 'member.document.add', { entity: 'Member', entityId: member._id, details: { name: req.body.name, kind: req.body.kind } });
+    await audit(req, 'member.document.add', { entity: 'Member', entityId: member._id, branchId: member.branchId, details: { name, kind } });
     res.status(201).json({ success: true, data: member.documents });
   },
 );
 
-router.delete('/:id/documents/:docId', permit('members.write'), async (req, res) => {
+router.delete('/:id/documents/:docId', permit('members.write', 'members.documents'), async (req, res) => {
   const member = await loadMember(req, req.params.id);
   const doc = member.documents.id(req.params.docId);
   if (!doc) throw ApiError.notFound('Document not found');
   doc.deleteOne();
   await member.save();
-  await audit(req, 'member.document.remove', { entity: 'Member', entityId: member._id, details: { name: doc.name } });
+  if (doc.fileId) await PrivateFile.deleteOne({ _id: doc.fileId, memberId: member._id });
+  await audit(req, 'member.document.remove', { entity: 'Member', entityId: member._id, branchId: member.branchId, details: { name: doc.name } });
   res.json({ success: true, data: member.documents });
+});
+
+// Profile photo: raw image (the browser shrinks it), then PUT /photo/thumb with the 128 px version.
+router.post('/:id/photo', permit('members.write'), express.raw({ type: IMAGE_TYPES, limit: MAX_PRIVATE_BYTES }), async (req, res) => {
+  const member = await loadMember(req, req.params.id);
+  const file = await savePrivateImage({ buffer: req.body, member, kind: 'photo', user: req.user, attached: true, memberVisible: true });
+  const old = member.photoFileId;
+  member.photoFileId = file._id;
+  await member.save();
+  if (old) await PrivateFile.deleteOne({ _id: old, memberId: member._id, kind: 'photo' });
+  await audit(req, 'member.photo.set', { entity: 'Member', entityId: member._id, branchId: member.branchId });
+  res.status(201).json({ success: true, data: { photoFileId: file._id } });
+});
+
+router.put('/:id/photo/thumb', permit('members.write'), express.raw({ type: IMAGE_TYPES, limit: MAX_THUMB_BYTES }), async (req, res) => {
+  const member = await loadMember(req, req.params.id);
+  if (!member.photoFileId) throw ApiError.notFound('Add a photo first');
+  const thumbType = checkThumb(req.body);
+  await PrivateFile.updateOne({ _id: member.photoFileId, memberId: member._id, kind: 'photo' }, { thumb: req.body, thumbType });
+  res.json({ success: true, data: { photoFileId: member.photoFileId } });
+});
+
+router.delete('/:id/photo', permit('members.write'), async (req, res) => {
+  const member = await loadMember(req, req.params.id);
+  const old = member.photoFileId;
+  member.photoFileId = undefined;
+  member.photoUrl = undefined; // an old public link is no longer shown either
+  await member.save();
+  if (old) await PrivateFile.deleteOne({ _id: old, memberId: member._id, kind: 'photo' });
+  await audit(req, 'member.photo.remove', { entity: 'Member', entityId: member._id, branchId: member.branchId });
+  res.json({ success: true });
 });
 
 router.post('/:id/restore', permit('members.delete'), async (req, res) => {

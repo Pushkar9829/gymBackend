@@ -6,7 +6,7 @@ import { validate } from '../../middlewares/validate.js';
 import { ApiError } from '../../utils/ApiError.js';
 import { loadAccessibleMember } from '../members/trainerScope.js';
 import { Measurement } from './fitness.model.js';
-import { PrivateFile, sendPrivateFile } from '../uploads/privateFile.model.js';
+import { PrivateFile, sendPrivateFile, findPrivateFile } from '../uploads/privateFile.model.js';
 import { audit } from '../audit/audit.model.js';
 
 /** Trainer's notes on a client's progress, with up to 4 private photos. */
@@ -106,10 +106,12 @@ portalProgressRouter.get('/progress', async (req, res) => {
   res.json({ success: true, data: notes });
 });
 
-// A member's own files that are shared with them (visible progress photos, their signature).
+// A member's own files that are shared with them (visible progress photos, their signature, their profile photo).
+// Documents (ID proofs) are not shown in the app. ?thumb=1 = small profile photo.
 portalProgressRouter.get('/files/:id', async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) throw ApiError.notFound('File not found');
-  const file = await PrivateFile.findOne({ _id: req.params.id, memberId: req.member._id, memberVisible: true });
+  const thumb = req.query.thumb === '1';
+  const file = await findPrivateFile({ _id: req.params.id, memberId: req.member._id, memberVisible: true }, { thumb });
   if (!file) throw ApiError.notFound('File not found');
-  sendPrivateFile(res, file);
+  sendPrivateFile(res, file, { thumb });
 });

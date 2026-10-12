@@ -14,7 +14,8 @@ const memberSchema = new mongoose.Schema(
     email: { type: String, lowercase: true, trim: true },
     gender: { type: String, enum: ['male', 'female', 'other'] },
     dob: Date,
-    photoUrl: String,
+    photoUrl: String, // old public Cloudinary link (kept until migrate-private-files --delete-remote)
+    photoFileId: { type: mongoose.Schema.Types.ObjectId, ref: 'PrivateFile' }, // private profile photo (+ thumbnail)
     address: String,
     emergencyContact: { name: String, phone: String, relation: String },
     healthNotes: String,
@@ -29,7 +30,10 @@ const memberSchema = new mongoose.Schema(
       {
         name: { type: String, required: true },
         kind: { type: String, enum: ['id-proof', 'medical', 'waiver', 'photo', 'other'], default: 'other' },
-        url: { type: String, required: true },
+        url: String, // old public Cloudinary link
+        fileId: { type: mongoose.Schema.Types.ObjectId, ref: 'PrivateFile' }, // private copy (new uploads)
+        contentType: String,
+        size: Number,
         uploadedAt: { type: Date, default: Date.now },
         uploadedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
       },

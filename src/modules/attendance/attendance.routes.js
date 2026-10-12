@@ -17,7 +17,7 @@ import { staffCheckIn } from './attendance.service.js';
 const router = Router();
 router.use(requireStaff);
 
-const memberProjection = 'name memberCode phone photoUrl membershipStatus membershipEnd currentPlanName dueAmount isBlocked isTrial branchId';
+const memberProjection = 'name memberCode phone photoUrl photoFileId membershipStatus membershipEnd currentPlanName dueAmount isBlocked isTrial branchId';
 
 router.post(
   '/check-in',
@@ -58,7 +58,7 @@ router.post(
         reason: result.access.reason,
         daysLeft: result.access.daysLeft,
         dueAmount: result.access.dueAmount,
-        member: { _id: member._id, name: member.name, memberCode: member.memberCode, photoUrl: member.photoUrl, phone: member.phone, isTrial: Boolean(member.isTrial) },
+        member: { _id: member._id, name: member.name, memberCode: member.memberCode, photoUrl: member.photoUrl, photoFileId: member.photoFileId, phone: member.phone, isTrial: Boolean(member.isTrial) },
         attendance: result.attendance,
       },
     });
@@ -125,7 +125,7 @@ router.get('/access-logs', permit('attendance.read'), async (req, res) => {
   const data = await paginate(AccessLog, filter, q, {
     sort: { at: -1 },
     populate: [
-      { path: 'memberId', select: 'name memberCode photoUrl' },
+      { path: 'memberId', select: 'name memberCode photoUrl photoFileId' },
       { path: 'deviceId', select: 'name' },
       { path: 'byUser', select: 'name' },
     ],

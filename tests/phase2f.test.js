@@ -102,7 +102,10 @@ test('public enquiry: no login, creates a website lead, repeats merge, honeypot 
 
 test('member documents: add and remove', async () => {
   const m = (await api().post('/api/v1/members').set(auth(rec)).send({ branchId: String(ctx.main._id), name: 'Doc Holder', phone: '9100000002' })).body.data;
-  const add = await api().post(`/api/v1/members/${m._id}/documents`).set(auth(rec)).send({ name: 'Aadhaar', kind: 'id-proof', url: 'https://res.cloudinary.com/demo/raw/upload/a.pdf' });
+  // Documents are private files now (raw upload); a public link is no longer accepted.
+  const old = await api().post(`/api/v1/members/${m._id}/documents`).set(auth(rec)).send({ name: 'Aadhaar', kind: 'id-proof', url: 'https://res.cloudinary.com/demo/raw/upload/a.pdf' });
+  assert.equal(old.status, 400);
+  const add = await api().post(`/api/v1/members/${m._id}/documents?name=Aadhaar&kind=id-proof`).set(auth(rec)).set('Content-Type', 'application/pdf').send(Buffer.from('%PDF-1.4\n%%EOF\n'));
   assert.equal(add.status, 201);
   assert.equal(add.body.data.length, 1);
   const del = await api().delete(`/api/v1/members/${m._id}/documents/${add.body.data[0]._id}`).set(auth(rec));

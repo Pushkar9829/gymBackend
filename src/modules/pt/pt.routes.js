@@ -66,7 +66,7 @@ router.get('/purchases', permit('pt.read'), async (req, res) => {
   if (q.due === 'true') filter.dueAmount = { $gt: 0 };
   const data = await paginate(PtPurchase, filter, q, {
     sort: { createdAt: -1 },
-    populate: [{ path: 'memberId', select: 'name memberCode phone photoUrl' }, { path: 'trainerId', select: 'name' }],
+    populate: [{ path: 'memberId', select: 'name memberCode phone photoUrl photoFileId' }, { path: 'trainerId', select: 'name' }],
   });
   res.json({ success: true, data });
 });

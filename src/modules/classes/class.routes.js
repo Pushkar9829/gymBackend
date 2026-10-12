@@ -112,7 +112,7 @@ classRouter.get('/sessions/:id', permit('classes.read'), async (req, res) => {
   await session.populate('trainerId', 'name');
   const bookings = await Booking.find({ sessionId: session._id, status: { $ne: 'cancelled' } })
     .sort({ status: 1, waitlistedAt: 1, createdAt: 1 })
-    .populate('memberId', 'name memberCode phone photoUrl')
+    .populate('memberId', 'name memberCode phone photoUrl photoFileId')
     .lean();
   res.json({ success: true, data: { session, bookings } });
 });
