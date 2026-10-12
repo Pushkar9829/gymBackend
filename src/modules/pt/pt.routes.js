@@ -15,6 +15,7 @@ import { inBackground, sendReceiptEmail } from '../notifications/emails.js';
 import { sellPackage, logSession, undoSession } from './pt.service.js';
 import { audit } from '../audit/audit.model.js';
 import { withDiscountGuard } from '../approvals/approval.service.js';
+import { PtBooking } from './ptBooking.model.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -155,6 +156,8 @@ router.get('/sessions', permit('pt.read'), async (req, res) => {
 router.delete('/sessions/:id', permit('pt.log'), async (req, res) => {
   await findInBranch(req, PtSession, req.params.id, { notFound: 'Session not found', extra: trainerScope(req) });
   await undoSession({ sessionId: req.params.id });
+  // A session logged from a booking: the booking is open again.
+  await PtBooking.updateOne({ sessionId: req.params.id }, { status: 'booked', $unset: { sessionId: 1, markedAt: 1, markedBy: 1 } });
   res.json({ success: true });
 });
 

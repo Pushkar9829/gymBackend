@@ -42,6 +42,21 @@ const gymSchema = new mongoose.Schema(
         defaultDays: { type: Number, default: 1, min: 1, max: 3 },
         maxDays: { type: Number, default: 3, min: 1, max: 3 },
         repeatDays: { type: Number, default: 90, min: 0, max: 365 }, // one trial per phone number in this many days
+        allowClassBooking: { type: Boolean, default: true }, // trial visitors can be booked into classes
+      },
+      // Personal training slot booking.
+      pt: {
+        bookingWindowDays: { type: Number, default: 14, min: 1, max: 60 }, // members book up to this many days ahead
+        cancelHours: { type: Number, default: 4, min: 0, max: 72 }, // members cancel up to this many hours before
+        maxPerDay: { type: Number, default: 1, min: 1, max: 5 }, // bookings per member per day
+        noShowUsesSession: { type: Boolean, default: true },
+      },
+      // Digital waiver / joining form. Texts are versioned in the WaiverVersion collection.
+      waiver: {
+        askMembers: { type: Boolean, default: false }, // ask members to sign in the app and at the desk
+        requireForEntry: { type: Boolean, default: false }, // deny entry until signed
+        currentVersion: { type: Number, default: 0 }, // 0 = no waiver text yet
+        minVersion: { type: Number, default: 0 }, // members must have signed at least this version
       },
     },
   },

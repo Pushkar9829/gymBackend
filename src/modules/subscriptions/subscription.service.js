@@ -337,10 +337,17 @@ async function shiftLater(sub, days) {
   }
 }
 
-export async function freeze({ subscriptionId, from, days, reason, user, override = false }) {
-  const sub = await Subscription.findOne({ _id: subscriptionId, status: 'active' });
-  if (!sub) throw ApiError.notFound('Active membership not found');
-  const start = from ? parseDay(from) : startOfDay();
+/** Freeze days / count allowed on the plan and how much is used. */
+export function freezeAllowance(sub) {
+  const daysUsed = (sub.freezes || []).reduce((sum, f) => sum + f.days, 0);
+  const daysAllowed = sub.plan?.freezeDaysAllowed || 0;
+  const freezesAllowed = sub.plan?.maxFreezes ?? 1;
+  const freezesUsed = (sub.freezes || []).length;
+  return { daysAllowed, daysUsed, daysLeft: Math.max(0, daysAllowed - daysUsed), freezesAllowed, freezesUsed, freezesLeft: Math.max(0, freezesAllowed - freezesUsed) };
+}
+
+/** Validates a freeze (dates inside the membership, no overlap, plan limits). Returns the last frozen day. */
+export function checkFreeze(sub, { start, days, override = false }) {
   if (ymd(start) < ymd(new Date())) throw ApiError.badRequest('Freeze cannot start in the past');
   if (ymd(start) < ymd(sub.startDate) || ymd(start) > ymd(sub.endDate)) {
     throw ApiError.badRequest('Freeze must start within the membership period');
@@ -352,13 +359,20 @@ export async function freeze({ subscriptionId, from, days, reason, user, overrid
   });
   if (overlaps) throw ApiError.conflict('Overlaps an existing freeze');
 
-  const used = sub.freezes.reduce((sum, f) => sum + f.days, 0);
-  const allowedDays = sub.plan.freezeDaysAllowed || 0;
-  const allowedCount = sub.plan.maxFreezes ?? 1;
+  const a = freezeAllowance(sub);
   if (!override) {
-    if (used + days > allowedDays) throw ApiError.badRequest(`Freeze limit exceeded: ${allowedDays - used} day(s) left on this plan`);
-    if (sub.freezes.length >= allowedCount) throw ApiError.badRequest(`Maximum ${allowedCount} freeze(s) allowed on this plan`);
+    if (a.daysUsed + days > a.daysAllowed) throw ApiError.badRequest(`Freeze limit exceeded: ${a.daysAllowed - a.daysUsed} day(s) left on this plan`);
+    if (a.freezesUsed >= a.freezesAllowed) throw ApiError.badRequest(`Maximum ${a.freezesAllowed} freeze(s) allowed on this plan`);
   }
+  return to;
+}
+
+/** Freezes from `from` (today or a future day) for `days` days; the end date moves forward by the same. */
+export async function freeze({ subscriptionId, from, days, reason, user, override = false }) {
+  const sub = await Subscription.findOne({ _id: subscriptionId, status: 'active' });
+  if (!sub) throw ApiError.notFound('Active membership not found');
+  const start = from ? parseDay(from) : startOfDay();
+  const to = checkFreeze(sub, { start, days, override });
 
   sub.freezes.push({ from: start, to, days, reason, by: user?._id });
   sub.endDate = addDays(sub.endDate, days);

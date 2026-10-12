@@ -44,6 +44,15 @@ const schema = z
             defaultDays: z.number().int().min(1).max(3),
             maxDays: z.number().int().min(1).max(3),
             repeatDays: z.number().int().min(0).max(365),
+            allowClassBooking: z.boolean(),
+          })
+          .partial(),
+        pt: z
+          .object({
+            bookingWindowDays: z.number().int().min(1).max(60),
+            cancelHours: z.number().int().min(0).max(72),
+            maxPerDay: z.number().int().min(1).max(5),
+            noShowUsesSession: z.boolean(),
           })
           .partial(),
       })
@@ -57,7 +66,7 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
   const { settings, ...rest } = req.body;
   Object.assign(gym, rest);
   if (settings) {
-    const { channels, payroll, trial, ...rest } = settings;
+    const { channels, payroll, trial, pt, ...rest } = settings;
     Object.assign(gym.settings, rest);
     if (channels) Object.assign(gym.settings.channels, channels);
     if (payroll) Object.assign(gym.settings.payroll, payroll);
@@ -65,6 +74,10 @@ router.put('/', permit('settings.write'), validate({ body: schema }), async (req
       gym.settings.trial ||= {};
       Object.assign(gym.settings.trial, trial);
       if (gym.settings.trial.defaultDays > gym.settings.trial.maxDays) gym.settings.trial.defaultDays = gym.settings.trial.maxDays;
+    }
+    if (pt) {
+      gym.settings.pt ||= {};
+      Object.assign(gym.settings.pt, pt);
     }
   }
   await gym.save();

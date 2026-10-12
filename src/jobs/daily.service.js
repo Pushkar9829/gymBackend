@@ -15,6 +15,8 @@ import { sendMemberEmail, createAlert } from '../modules/notifications/notificat
 import { sendEmail } from '../modules/notifications/mailer.js';
 import { notifyMember } from '../modules/messaging/messaging.service.js';
 import { sendClassReminders } from '../modules/classes/class.service.js';
+import { sendPtReminders } from '../modules/pt/ptBooking.service.js';
+import { PrivateFile } from '../modules/uploads/privateFile.model.js';
 import { equipmentServiceAlerts } from '../modules/equipment/equipment.routes.js';
 import { lockerAlerts } from '../modules/lockers/locker.routes.js';
 import { startOfDay, addDays, ymd, dmy, dayjs, tz } from '../utils/dates.js';
@@ -118,6 +120,7 @@ export async function runDailyJob({ now = new Date() } = {}) {
 
   // 4b. Reminders for today's booked classes (SMS/WhatsApp when switched on)
   report.classReminders = await sendClassReminders({ now, gym });
+  report.ptReminders = await sendPtReminders({ now, gym });
   report.equipmentAlerts = await equipmentServiceAlerts({ now });
   report.lockers = await lockerAlerts({ now });
 
@@ -139,6 +142,8 @@ export async function runDailyJob({ now = new Date() } = {}) {
 
   // 6. Housekeeping: old finished device commands
   await DeviceCommand.deleteMany({ status: { $in: ['done', 'superseded'] }, updatedAt: { $lt: addDays(today, -30) } });
+  // Progress photos uploaded but never saved with a note.
+  await PrivateFile.deleteMany({ attached: false, createdAt: { $lt: addDays(now, -1) } });
 
   // 7. Owner summary email for yesterday
   if (emailsOn) await sendOwnerSummary(gym, yesterday, today);

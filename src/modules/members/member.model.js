@@ -78,6 +78,13 @@ const memberSchema = new mongoose.Schema(
       convertedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
     },
 
+    // Latest signed waiver (details and the signature image are in WaiverSignature / PrivateFile).
+    waiver: {
+      version: Number,
+      signedAt: Date,
+      signatureId: { type: mongoose.Schema.Types.ObjectId, ref: 'WaiverSignature' },
+    },
+
     isDeleted: { type: Boolean, default: false },
   },
   { timestamps: true },

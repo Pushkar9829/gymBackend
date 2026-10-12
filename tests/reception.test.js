@@ -50,7 +50,7 @@ let before0;
 
 test('trial settings have safe defaults', async () => {
   const s = (await api().get(`${V1}/settings`).set(auth(rec))).body.data.settings;
-  assert.deepEqual({ ...s.trial }, { enabled: true, defaultDays: 1, maxDays: 3, repeatDays: 90 });
+  assert.deepEqual({ ...s.trial }, { enabled: true, defaultDays: 1, maxDays: 3, repeatDays: 90, allowClassBooking: true });
   assert.equal(s.receiptPaper, 'a4');
 });
 

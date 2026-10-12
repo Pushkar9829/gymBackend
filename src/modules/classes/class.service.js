@@ -5,6 +5,8 @@ import { Member } from '../members/member.model.js';
 import { loadAccess } from '../members/member.state.js';
 import { notifyMember } from '../messaging/messaging.service.js';
 import { createAlert } from '../notifications/notification.service.js';
+import { getGym } from '../settings/gym.model.js';
+import { trialSettings } from '../trials/trial.service.js';
 import { logger } from '../../config/logger.js';
 
 const MAX_GENERATE_DAYS = 31;
@@ -64,6 +66,9 @@ export async function bookClass({ sessionId, member, source = 'member', user }) 
   if (!session || session.status !== 'scheduled') throw ApiError.notFound('Class not available');
   if (session.startsAt <= new Date()) throw ApiError.badRequest('This class has already started');
   if (String(session.branchId) !== String(member.branchId)) throw ApiError.badRequest('This class is at another branch');
+  if (member.isTrial && trialSettings((await getGym()).settings).allowClassBooking === false) {
+    throw ApiError.badRequest('Trial visitors cannot book classes (Settings > Trial passes)');
+  }
 
   const { access } = await loadAccess(member, { now: session.startsAt });
   if (!access.allowed) throw ApiError.badRequest(`Cannot book: ${access.reason}`);

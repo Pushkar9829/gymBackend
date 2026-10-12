@@ -4,7 +4,7 @@ import { refreshMember } from '../members/member.state.js';
 import { escapeRegex } from '../../utils/pagination.js';
 import { addDays, startOfDay, ymd } from '../../utils/dates.js';
 
-export const TRIAL_DEFAULTS = { enabled: true, defaultDays: 1, maxDays: 3, repeatDays: 90 };
+export const TRIAL_DEFAULTS = { enabled: true, defaultDays: 1, maxDays: 3, repeatDays: 90, allowClassBooking: true };
 export const trialSettings = (settings = {}) => ({ ...TRIAL_DEFAULTS, ...(settings.trial || {}) });
 
 /** Matches a phone number on its last 10 digits, so "+91 98765 43210" and "9876543210" are the same person. */

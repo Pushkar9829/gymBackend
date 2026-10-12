@@ -1,4 +1,5 @@
 import { addDays, dmy, ymd, diffDays, parseDay, dayjs, tz } from '../../utils/dates.js';
+import { waiverBlocksEntry } from '../waivers/waiver.rules.js';
 
 /**
  * Single source of truth for "may this member enter?".
@@ -16,6 +17,15 @@ import { addDays, dmy, ymd, diffDays, parseDay, dayjs, tz } from '../../utils/da
  *  daysLeft           - days until membership end (0 = last day)
  */
 export function computeAccess({ member, subscriptions = [], settings = {}, now = new Date() }) {
+  const result = membershipAccess({ member, subscriptions, settings, now });
+  // Signed waiver required (Settings > Waiver): checked last, so a membership problem is shown first.
+  if (!waiverBlocksEntry(member, settings)) return result;
+  const device = { ...result.device, enabled: false };
+  if (!result.allowed) return { ...result, device };
+  return { ...result, allowed: false, code: 'WAIVER_REQUIRED', reason: 'Waiver not signed - sign it in the member app or at reception', daysLeft: null, device };
+}
+
+function membershipAccess({ member, subscriptions, settings, now }) {
   const graceDays = Number(settings.graceDays || 0);
   const today = ymd(now);
 
@@ -146,4 +156,4 @@ function deviceState(enabled, window, timezoneId = 1) {
   return { enabled: Boolean(enabled && window), validFrom: window?.from || null, validTo: window?.to || null, timezoneId };
 }
 
-export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES', 'OUTSIDE_HOURS', 'TRIAL_ENDED', 'TRIAL_NOT_STARTED'];
+export const DENY_CODES = ['BLOCKED', 'NO_MEMBERSHIP', 'CANCELLED', 'EXPIRED', 'NOT_STARTED', 'FROZEN', 'DUES', 'OUTSIDE_HOURS', 'TRIAL_ENDED', 'TRIAL_NOT_STARTED', 'WAIVER_REQUIRED'];

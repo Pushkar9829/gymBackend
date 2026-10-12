@@ -37,6 +37,10 @@ import portalRoutes from './modules/portal/portal.routes.js';
 import couponRoutes from './modules/coupons/coupon.routes.js';
 import announcementRoutes from './modules/messaging/announcement.routes.js';
 import ptRoutes from './modules/pt/pt.routes.js';
+import { ptScheduleRouter, portalPtRouter } from './modules/pt/ptBooking.routes.js';
+import { freezeRequestRouter, portalFreezeRouter } from './modules/subscriptions/freezeRequest.routes.js';
+import progressRoutes, { portalProgressRouter } from './modules/fitness/progress.routes.js';
+import { waiverRouter, memberWaiverRouter, portalWaiverRouter } from './modules/waivers/waiver.routes.js';
 import fitnessRoutes from './modules/fitness/fitness.routes.js';
 import { classRouter, portalClassRouter } from './modules/classes/class.routes.js';
 import staffRoutes from './modules/staff/staff.routes.js';
@@ -125,7 +129,12 @@ export function createApp() {
   api.use('/coupons', couponRoutes);
   api.use('/announcements', announcementRoutes);
   api.use('/pt', ptRoutes);
+  api.use('/pt', ptScheduleRouter);
+  api.use('/fitness/progress', progressRoutes);
   api.use('/fitness', fitnessRoutes);
+  api.use('/freeze-requests', freezeRequestRouter);
+  api.use('/waivers', waiverRouter);
+  api.use('/members', memberWaiverRouter);
   api.use('/classes', classRouter);
   api.use('/staff-attendance', staffRoutes);
   api.use('/public', publicRoutes);
@@ -142,6 +151,10 @@ export function createApp() {
   api.use('/me', portalClassRouter);
   api.use('/me', portalLockerRouter);
   api.use('/me', portalFeedbackRouter);
+  api.use('/me', portalPtRouter);
+  api.use('/me', portalFreezeRouter);
+  api.use('/me', portalProgressRouter);
+  api.use('/me', portalWaiverRouter);
   api.use('/me', portalRoutes);
   app.use('/api/v1', api);
 
