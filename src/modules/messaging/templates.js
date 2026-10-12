@@ -41,6 +41,10 @@ export const TEMPLATES = {
     vars: (v) => [v.name, v.locker, v.date, v.gym],
     text: (v) => `Hi ${v.name}, your locker ${v.locker} at ${v.gym} is paid till ${v.date}. Please renew at the desk or empty it.`,
   },
+  miss_you: {
+    vars: (v) => [v.name, v.days, v.gym],
+    text: (v) => `Hi ${v.name}, we have not seen you at ${v.gym} for ${v.days} days. Your membership is active - come back and keep your streak going!`,
+  },
   announcement: {
     vars: (v) => [v.name, v.text],
     text: (v) => v.text,

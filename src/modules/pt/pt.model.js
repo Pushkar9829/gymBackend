@@ -38,6 +38,7 @@ const ptPurchaseSchema = new mongoose.Schema(
     paidAmount: { type: Number, default: 0 },
     dueAmount: { type: Number, default: 0 },
     invoiceId: { type: mongoose.Schema.Types.ObjectId, ref: 'Invoice' },
+    approvalId: { type: mongoose.Schema.Types.ObjectId, ref: 'DiscountApproval' },
     createdBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   },
   { timestamps: true },

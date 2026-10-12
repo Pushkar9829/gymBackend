@@ -30,6 +30,10 @@ const gymSchema = new mongoose.Schema(
         weeklyOff: { type: [Number], default: [0] }, // 0 = Sunday
         prorateByAttendance: { type: Boolean, default: true },
       },
+      // Owner controls
+      discountLimitPercent: { type: Number, default: 10, min: 0, max: 100 }, // receptionist max without approval
+      cashShortAlert: { type: Number, default: 10000, min: 0 }, // paise: alert when the drawer is short by more
+      retentionGraceDays: { type: Number, default: 15, min: 0, max: 90 }, // renewal window after a membership ends
     },
   },
   { timestamps: true },

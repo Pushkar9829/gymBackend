@@ -34,6 +34,9 @@ const schema = z
         channels: z.object({ sms: z.boolean(), whatsapp: z.boolean() }).partial(),
         memberOtpLogin: z.boolean(),
         payroll: z.object({ weeklyOff: z.array(z.number().int().min(0).max(6)).max(3), prorateByAttendance: z.boolean() }).partial(),
+        discountLimitPercent: z.number().min(0).max(100),
+        cashShortAlert: z.number().int().min(0).max(100000000),
+        retentionGraceDays: z.number().int().min(0).max(90),
       })
       .partial(),
   })

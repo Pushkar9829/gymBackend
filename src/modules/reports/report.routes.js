@@ -18,6 +18,9 @@ import { Sale } from '../shop/shop.model.js';
 import { Feedback } from '../feedback/feedback.model.js';
 import { LockerAllotment } from '../lockers/locker.model.js';
 import { can } from '../../config/permissions.js';
+import { CashClosing } from '../cash/cash.model.js';
+import { DiscountApproval } from '../approvals/approval.model.js';
+import { audienceFilter } from '../notifications/notification.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -57,7 +60,7 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
     canMoney ? sumBy(Expense, { ...bf, isDeleted: false, date: { $gte: monthStart } }) : null,
     canMoney ? sumBy(Member, { ...bf, isDeleted: false, dueAmount: { $gt: 0 } }, '$dueAmount') : null,
     Lead.countDocuments({ ...bf, isDeleted: false, status: { $in: ['new', 'contacted', 'trial'] }, nextFollowUpAt: { $lt: tomorrow } }),
-    Notification.find({ ...bf, channel: 'inapp', readAt: null }).sort({ createdAt: -1 }).limit(10).lean(),
+    Notification.find({ ...bf, channel: 'inapp', readAt: null, ...audienceFilter(req) }).sort({ createdAt: -1 }).limit(10).lean(),
     Device.find({ ...bf, isActive: true }).select('name lastSeenAt').lean(),
     Attendance.aggregate([
       { $match: { ...bf, day: { $gte: ymd(addDays(today, -13)) } } },
@@ -65,9 +68,16 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
       { $sort: { _id: 1 } },
     ]),
   ]);
-  const [openComplaints, lockersOverdue] = await Promise.all([
+  const [openComplaints, lockersOverdue, dayClose, approvals] = await Promise.all([
     can(req.user.role, 'feedback.read') ? Feedback.countDocuments({ ...bf, type: 'complaint', status: { $in: ['open', 'in-progress'] } }) : null,
     can(req.user.role, 'lockers.read') ? LockerAllotment.countDocuments({ ...bf, status: 'active', endDate: { $lt: today } }) : null,
+    can(req.user.role, 'cash.close') ? dayCloseStatus(req, bf, ymd(today)) : null,
+    can(req.user.role, 'discounts.approve')
+      ? Promise.all([
+          DiscountApproval.countDocuments({ ...bf, status: 'pending' }),
+          DiscountApproval.find({ ...bf, status: 'pending' }).sort({ createdAt: -1 }).limit(5).populate([{ path: 'memberId', select: 'name memberCode' }, { path: 'requestedBy', select: 'name' }]).lean(),
+        ]).then(([pending, items]) => ({ pending, items }))
+      : null,
   ]);
 
   res.json({
@@ -75,6 +85,8 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
     data: {
       openComplaints,
       lockersOverdue,
+      dayClose,
+      approvals,
       members: { active, frozen, expiringIn7Days: expiring7, expiredLast30Days: expiredLast30, newThisMonth },
       attendance: { checkinsToday, deniedToday, last14Days: trend.map((t) => ({ day: t._id, count: t.count })) },
       money: canMoney
@@ -86,6 +98,17 @@ router.get('/dashboard', permit('dashboard.read'), async (req, res) => {
     },
   });
 });
+
+/** Is today's cash closed for the branches in view? */
+async function dayCloseStatus(req, bf, day) {
+  const branchIds = bf.branchId ? (bf.branchId.$in || [bf.branchId]) : (await Branch.find().select('_id').lean()).map((b) => b._id);
+  const [branches, closings] = await Promise.all([
+    Branch.find({ _id: { $in: branchIds }, isActive: { $ne: false } }).select('name').lean(),
+    CashClosing.find({ branchId: { $in: branchIds }, day, status: 'closed' }).select('branchId difference').lean(),
+  ]);
+  const one = branches.length === 1 ? closings[0] : null;
+  return { day, total: branches.length, closed: closings.length, branchName: branches.length === 1 ? branches[0].name : null, difference: one ? one.difference : null };
+}
 
 router.get('/collections', permit('reports.read'), async (req, res) => {
   const bf = branchFilter(req);

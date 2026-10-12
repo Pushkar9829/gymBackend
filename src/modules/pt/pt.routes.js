@@ -14,6 +14,7 @@ import { recordPayment } from '../subscriptions/subscription.service.js';
 import { inBackground, sendReceiptEmail } from '../notifications/emails.js';
 import { sellPackage, logSession, undoSession } from './pt.service.js';
 import { audit } from '../audit/audit.model.js';
+import { withDiscountGuard } from '../approvals/approval.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -80,11 +81,19 @@ router.post(
       startDate: day.optional(),
       discount: z.number().int().min(0).default(0),
       payment: paymentBody.optional(),
+      approvalId: objectId.optional(),
     }),
   }),
   async (req, res) => {
-    await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found', extra: { isDeleted: false } });
-    const r = await sellPackage({ ...req.body, user: req.user });
+    const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found', extra: { isDeleted: false } });
+    const { approvalId, ...body } = req.body;
+    const { result: r, done } = await withDiscountGuard(
+      req,
+      { kind: 'pt', branchId: member.branchId, memberId: member._id, discount: body.discount, approvalId, packageId: body.packageId },
+      (approval) => sellPackage({ ...body, approvalId: approval?._id, user: req.user }),
+      'PtPurchase',
+    );
+    await done(r.purchase._id);
     await audit(req, 'pt.sell', { entity: 'PtPurchase', entityId: r.purchase._id, branchId: r.purchase.branchId, details: { packageId: req.body.packageId } });
     res.status(201).json({ success: true, data: r });
   },

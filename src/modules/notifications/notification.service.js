@@ -2,10 +2,13 @@ import { Notification } from './notification.model.js';
 import { sendEmail } from './mailer.js';
 import { logger } from '../../config/logger.js';
 
-/** Staff dashboard alert. dedupeKey prevents repeats (e.g. one alert per member per day). */
-export async function createAlert({ branchId, memberId, template, subject, body, dedupeKey }) {
+/** In-app alerts this staff member should see: for everyone, or for their role. */
+export const audienceFilter = (req) => ({ $or: [{ roles: null }, { roles: { $size: 0 } }, { roles: req.user.role }] });
+
+/** Staff dashboard alert. dedupeKey prevents repeats (e.g. one alert per member per day). `roles` limits who sees it. */
+export async function createAlert({ branchId, memberId, template, subject, body, dedupeKey, roles }) {
   try {
-    return await Notification.create({ channel: 'inapp', branchId, memberId, template, subject, body, status: 'sent', sentAt: new Date(), dedupeKey });
+    return await Notification.create({ channel: 'inapp', branchId, memberId, template, subject, body, status: 'sent', sentAt: new Date(), dedupeKey, roles: roles?.length ? roles : undefined });
   } catch (err) {
     if (err?.code === 11000) return null;
     throw err;

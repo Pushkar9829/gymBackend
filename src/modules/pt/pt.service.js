@@ -10,7 +10,7 @@ import { getGym } from '../settings/gym.model.js';
 import { nextInvoiceNo, recordPayment } from '../subscriptions/subscription.service.js';
 import { inBackground, sendInvoiceEmail } from '../notifications/emails.js';
 
-export async function sellPackage({ memberId, packageId, trainerId, startDate, discount = 0, payment, user }) {
+export async function sellPackage({ memberId, packageId, trainerId, startDate, discount = 0, payment, user, approvalId }) {
   const [member, pkg, trainer, gym] = await Promise.all([
     Member.findOne({ _id: memberId, isDeleted: false }).lean(),
     PtPackage.findOne({ _id: packageId, isActive: true }).lean(),
@@ -44,6 +44,7 @@ export async function sellPackage({ memberId, packageId, trainerId, startDate, d
     taxAmount,
     totalAmount: taxable + taxAmount,
     dueAmount: taxable + taxAmount,
+    approvalId,
     createdBy: user?._id,
   });
 

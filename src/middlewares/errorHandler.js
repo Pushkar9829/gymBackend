@@ -33,5 +33,6 @@ export function errorHandler(err, req, res, _next) {
     captureError(err, { url: req.originalUrl, method: req.method });
     if (process.env.NODE_ENV === 'production') message = 'Something went wrong';
   }
-  res.status(status).json({ success: false, message, ...(errors ? { errors } : {}) });
+  const code = err instanceof ApiError && typeof err.code === 'string' ? err.code : undefined;
+  res.status(status).json({ success: false, message, ...(errors ? { errors } : {}), ...(code ? { code } : {}) });
 }

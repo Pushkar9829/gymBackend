@@ -52,7 +52,7 @@ async function createInvoice({ gym, member, sub, items, company }) {
   // Company-billed: invoice in the company's name (with its GSTIN), member shown on the line items.
   const billedTo =
     company && sub.billTo === 'company'
-      ? { name: company.name, phone: company.phone, email: company.email, memberCode: member.memberCode, address: [company.address, company.gstin && `GSTIN: ${company.gstin}`].filter(Boolean).join(' | ') }
+      ? { name: company.name, phone: company.phone, email: company.email, memberCode: member.memberCode, address: [company.address, company.gstin && `GSTIN: ${company.gstin}`].filter(Boolean).join(' | '), gstin: company.gstin || undefined }
       : { name: member.name, phone: member.phone, email: member.email, memberCode: member.memberCode, address: member.address };
   return Invoice.create({
     invoiceNo: await nextInvoiceNo(gym),
@@ -144,7 +144,7 @@ export async function quoteSubscription({ member, plan, discount = 0, waiveJoini
  * Creates a new / renewal membership with invoice and an optional first payment.
  */
 export async function createSubscription({
-  memberId, planId, startDate, discount = 0, waiveJoiningFee = false, couponCode, payment, user, type, allowBackdate = false, familyMemberIds = [],
+  memberId, planId, startDate, discount = 0, waiveJoiningFee = false, couponCode, payment, user, type, allowBackdate = false, familyMemberIds = [], credit = 0, approvalId,
 }) {
   const [member, plan, gym] = await Promise.all([
     Member.findOne({ _id: memberId, isDeleted: false }).lean(),
@@ -212,6 +212,9 @@ export async function createSubscription({
       price: q.price,
       joiningFee: q.joiningFee,
       discount: q.discount,
+      manualDiscount: Math.max(0, discount - credit),
+      couponDiscount: q.couponDiscount,
+      approvalId,
       couponCode: q.coupon?.code,
       companyId: q.company?._id,
       companyDiscount: q.companyDiscount,
@@ -268,7 +271,7 @@ export async function createSubscription({
 }
 
 /** Upgrade / change plan now. Unused paid value of the current plan becomes credit. */
-export async function changePlan({ subscriptionId, planId, discount = 0, payment, user }) {
+export async function changePlan({ subscriptionId, planId, discount = 0, payment, user, approvalId }) {
   const current = await Subscription.findOne({ _id: subscriptionId, status: 'active' });
   if (!current) throw ApiError.notFound('Active membership not found');
   if (current.groupOf || current.familyMemberIds?.length) throw ApiError.badRequest('Family plans cannot be changed. Cancel and add a new plan instead.');
@@ -304,6 +307,8 @@ export async function changePlan({ subscriptionId, planId, discount = 0, payment
         planId,
         startDate: ymd(today),
         discount: discount + credit,
+        credit,
+        approvalId,
         waiveJoiningFee: true,
         payment,
         user,

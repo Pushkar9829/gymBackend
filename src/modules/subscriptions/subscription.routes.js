@@ -10,6 +10,7 @@ import { Member } from '../members/member.model.js';
 import { PAYMENT_MODES } from '../payments/payment.model.js';
 import * as svc from './subscription.service.js';
 import { audit } from '../audit/audit.model.js';
+import { withDiscountGuard } from '../approvals/approval.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -52,16 +53,24 @@ router.post(
       couponCode: z.string().trim().max(20).optional(),
       familyMemberIds: z.array(objectId).max(9).default([]),
       payment: paymentBody,
+      approvalId: objectId.optional(),
     }),
   }),
   async (req, res) => {
-    await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found' });
-    const result = await svc.createSubscription({ ...req.body, user: req.user });
+    const member = await findInBranch(req, Member, req.body.memberId, { notFound: 'Member not found' });
+    const { approvalId, ...body } = req.body;
+    const { result, done } = await withDiscountGuard(
+      req,
+      { kind: 'subscription', branchId: member.branchId, memberId: member._id, discount: body.discount, approvalId, planId: body.planId, waiveJoiningFee: body.waiveJoiningFee },
+      (approval) => svc.createSubscription({ ...body, approvalId: approval?._id, user: req.user }),
+      'Subscription',
+    );
+    await done(result.subscription._id);
     await audit(req, 'subscription.create', {
       entity: 'Subscription',
       entityId: result.subscription._id,
       branchId: result.subscription.branchId,
-      details: { planId: req.body.planId, discount: req.body.discount, payment: req.body.payment?.amount },
+      details: { planId: req.body.planId, discount: req.body.discount, payment: req.body.payment?.amount, approvalId },
     });
     res.status(201).json({ success: true, data: { ...result, access: clean(result.access) } });
   },
@@ -70,10 +79,17 @@ router.post(
 router.post(
   '/:id/change-plan',
   permit('subscriptions.write'),
-  validate({ body: z.object({ planId: objectId, discount: z.number().int().min(0).default(0), payment: paymentBody }) }),
+  validate({ body: z.object({ planId: objectId, discount: z.number().int().min(0).default(0), payment: paymentBody, approvalId: objectId.optional() }) }),
   async (req, res) => {
     const sub = await findInBranch(req, Subscription, req.params.id, { notFound: 'Membership not found' });
-    const result = await svc.changePlan({ subscriptionId: sub._id, ...req.body, user: req.user });
+    const { approvalId, ...body } = req.body;
+    const { result, done } = await withDiscountGuard(
+      req,
+      { kind: 'subscription', branchId: sub.branchId, memberId: sub.memberId, discount: body.discount, approvalId, planId: body.planId, waiveJoiningFee: true },
+      (approval) => svc.changePlan({ subscriptionId: sub._id, ...body, approvalId: approval?._id, user: req.user }),
+      'Subscription',
+    );
+    await done(result.subscription._id);
     await audit(req, 'subscription.changePlan', {
       entity: 'Subscription',
       entityId: sub._id,

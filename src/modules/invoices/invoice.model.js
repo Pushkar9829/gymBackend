@@ -15,7 +15,7 @@ const invoiceSchema = new mongoose.Schema(
     total: Number,
     issuedAt: { type: Date, default: Date.now },
     // Snapshot of who/what was billed.
-    billedTo: { name: String, phone: String, email: String, memberCode: Number, address: String },
+    billedTo: { name: String, phone: String, email: String, memberCode: Number, address: String, gstin: String },
     seller: { name: String, gstin: String, address: String, phone: String, email: String, branchName: String },
   },
   { timestamps: true },

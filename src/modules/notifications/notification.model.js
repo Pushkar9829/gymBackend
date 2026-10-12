@@ -13,6 +13,8 @@ const notificationSchema = new mongoose.Schema(
     error: String,
     sentAt: Date,
     readAt: Date, // in-app only
+    // In-app alerts for some roles only (e.g. approvals for owner/manager). Empty = every staff member.
+    roles: { type: [String], default: undefined },
     // Prevents duplicate reminders, e.g. "renewal-7:<subscriptionId>"
     dedupeKey: { type: String, unique: true, sparse: true },
   },

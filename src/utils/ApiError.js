@@ -1,8 +1,9 @@
 export class ApiError extends Error {
-  constructor(status, message, errors) {
+  constructor(status, message, errors, code) {
     super(message);
     this.status = status;
     this.errors = errors;
+    this.code = code; // machine-readable reason the client can act on, e.g. DISCOUNT_APPROVAL_REQUIRED
   }
   static badRequest(msg = 'Bad request', errors) { return new ApiError(400, msg, errors); }
   static unauthorized(msg = 'Unauthorized') { return new ApiError(401, msg); }

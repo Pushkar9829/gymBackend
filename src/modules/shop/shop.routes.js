@@ -14,6 +14,7 @@ import { moveStock, createSale, refundSale } from './shop.service.js';
 import { saleReceiptPdf } from './sale.pdf.js';
 import { getGym } from '../settings/gym.model.js';
 import { audit } from '../audit/audit.model.js';
+import { withDiscountGuard } from '../approvals/approval.service.js';
 
 const router = Router();
 router.use(requireStaff);
@@ -28,6 +29,7 @@ const productBody = z.object({
   taxPercent: z.number().min(0).max(50).optional(),
   lowStockAt: z.number().int().min(0).optional(),
   imageUrl: z.string().url().optional().or(z.literal('')),
+  hsn: z.string().trim().regex(/^(\d{4}|\d{6}|\d{8})?$/, 'HSN code is 4, 6 or 8 digits').optional(),
   isActive: z.boolean().optional(),
 });
 
@@ -106,11 +108,20 @@ router.post(
       discount: z.number().int().min(0).default(0),
       mode: z.enum(['cash', 'upi', 'card', 'bank']),
       reference: z.string().trim().max(100).optional(),
+      approvalId: objectId.optional(),
     }),
   }),
   async (req, res) => {
     assertBranchAccess(req, req.body.branchId);
-    const sale = await createSale({ ...req.body, memberId: req.body.memberId || undefined, user: req.user });
+    const { approvalId, ...body } = req.body;
+    const memberId = body.memberId || undefined;
+    const { result: sale, done } = await withDiscountGuard(
+      req,
+      { kind: 'shop', branchId: body.branchId, memberId, discount: body.discount, approvalId, items: body.items },
+      (approval) => createSale({ ...body, memberId, approvalId: approval?._id, user: req.user }),
+      'Sale',
+    );
+    await done(sale._id);
     res.status(201).json({ success: true, data: sale });
   },
 );

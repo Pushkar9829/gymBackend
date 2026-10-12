@@ -13,6 +13,7 @@ const productSchema = new mongoose.Schema(
     costPrice: { type: Number, default: 0, min: 0 }, // purchase cost per unit, paise
     taxPercent: { type: Number, default: 18, min: 0, max: 50 },
     lowStockAt: { type: Number, default: 5, min: 0 },
+    hsn: { type: String, trim: true }, // HSN code for the GST return (optional)
     imageUrl: String,
     isActive: { type: Boolean, default: true },
   },
@@ -65,6 +66,7 @@ const saleSchema = new mongoose.Schema(
         unitPrice: Number,
         unitCost: Number,
         taxPercent: Number,
+        hsn: String,
         amount: Number, // qty x unitPrice (pre-tax)
         taxAmount: Number,
         _id: false,
@@ -80,6 +82,7 @@ const saleSchema = new mongoose.Schema(
     status: { type: String, enum: ['paid', 'refunded'], default: 'paid' },
     refundedAt: Date,
     refundReason: String,
+    approvalId: { type: ObjectId, ref: 'DiscountApproval' },
     soldBy: { type: ObjectId, ref: 'User' },
   },
   { timestamps: true },

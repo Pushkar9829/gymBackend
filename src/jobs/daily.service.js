@@ -6,6 +6,9 @@ import { Payment } from '../modules/payments/payment.model.js';
 import { Attendance } from '../modules/attendance/attendance.model.js';
 import { AccessLog } from '../modules/access/accessLog.model.js';
 import { DeviceCommand } from '../modules/devices/device.model.js';
+import { Branch } from '../modules/branches/branch.model.js';
+import { CashClosing } from '../modules/cash/cash.model.js';
+import { DiscountApproval } from '../modules/approvals/approval.model.js';
 import { getGym } from '../modules/settings/gym.model.js';
 import { refreshMember } from '../modules/members/member.state.js';
 import { sendMemberEmail, createAlert } from '../modules/notifications/notification.service.js';
@@ -147,12 +150,24 @@ export async function runDailyJob({ now = new Date() } = {}) {
 async function sendOwnerSummary(gym, from, to) {
   const owners = await User.find({ role: 'owner', isActive: true }).select('email').lean();
   if (!owners.length) return;
-  const [collected, checkins, denied, expiring] = await Promise.all([
+  const [collected, checkins, denied, expiring, branches, closings, pendingApprovals] = await Promise.all([
     Payment.aggregate([{ $match: { type: 'payment', paidAt: { $gte: from, $lt: to } } }, { $group: { _id: null, v: { $sum: '$amount' } } }]),
     Attendance.countDocuments({ day: ymd(from) }),
     AccessLog.countDocuments({ result: 'deny', at: { $gte: from, $lt: to } }),
     Member.countDocuments({ isDeleted: false, membershipStatus: 'active', membershipEnd: { $gte: to, $lt: addDays(to, 7) } }),
+    Branch.find({ isActive: { $ne: false } }).select('name').lean(),
+    CashClosing.find({ day: ymd(from) }).lean(),
+    DiscountApproval.countDocuments({ status: 'pending' }),
   ]);
+  const shortLimit = gym.settings?.cashShortAlert ?? 10000;
+  // Day closing per branch: shortages above the alert limit are flagged.
+  const cashLines = branches.map((b) => {
+    const c = closings.find((x) => String(x.branchId) === String(b._id));
+    if (!c || c.status !== 'closed') return `  ${b.name}: not closed`;
+    if (!c.difference) return `  ${b.name}: closed, cash matched`;
+    const flag = c.difference < 0 && -c.difference > shortLimit ? ' (!)' : '';
+    return `  ${b.name}: ${c.difference < 0 ? 'SHORT' : 'excess'} ${formatINR(Math.abs(c.difference))}${flag} - ${c.note || ''}`;
+  });
   const text = [
     `Daily summary for ${dmy(from)}`,
     '',
@@ -160,6 +175,10 @@ async function sendOwnerSummary(gym, from, to) {
     `Check-ins: ${checkins}`,
     `Entries denied: ${denied}`,
     `Memberships ending in next 7 days: ${expiring}`,
+    `Discount approvals waiting: ${pendingApprovals}`,
+    '',
+    'Cash closing:',
+    ...cashLines,
   ].join('\n');
   for (const o of owners) {
     try {

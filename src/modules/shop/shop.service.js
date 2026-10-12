@@ -22,7 +22,7 @@ export async function moveStock({ productId, branchId, qty, type, unitCost, sale
 }
 
 /** Point-of-sale checkout: validates items, takes stock atomically, rolls back on failure. */
-export async function createSale({ branchId, memberId, customerName, items, discount = 0, mode, reference, user }) {
+export async function createSale({ branchId, memberId, customerName, items, discount = 0, mode, reference, user, approvalId }) {
   if (!items?.length) throw ApiError.badRequest('Add at least one product');
   const products = await Product.find({ _id: { $in: items.map((i) => i.productId) }, isActive: true }).lean();
   const byId = Object.fromEntries(products.map((p) => [String(p._id), p]));
@@ -30,7 +30,7 @@ export async function createSale({ branchId, memberId, customerName, items, disc
     const p = byId[String(i.productId)];
     if (!p) throw ApiError.badRequest('A product in the cart is not available');
     const amount = p.price * i.qty;
-    return { productId: p._id, name: p.name, qty: i.qty, unitPrice: p.price, unitCost: p.costPrice, taxPercent: p.taxPercent, amount, taxAmount: calcTax(amount, p.taxPercent) };
+    return { productId: p._id, name: p.name, qty: i.qty, unitPrice: p.price, unitCost: p.costPrice, taxPercent: p.taxPercent, hsn: p.hsn || undefined, amount, taxAmount: calcTax(amount, p.taxPercent) };
   });
   const subTotal = lines.reduce((s, l) => s + l.amount, 0);
   if (discount < 0 || discount > subTotal) throw ApiError.badRequest('Discount cannot exceed the amount');
@@ -65,6 +65,7 @@ export async function createSale({ branchId, memberId, customerName, items, disc
     cost: lines.reduce((s, l) => s + (l.unitCost || 0) * l.qty, 0),
     mode,
     reference,
+    approvalId,
     soldBy: user?._id,
   });
   await checkLowStock(branchId, lines.map((l) => l.productId));

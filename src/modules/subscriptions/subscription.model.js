@@ -41,7 +41,10 @@ const subscriptionSchema = new mongoose.Schema(
     // Billing (paise)
     price: Number,
     joiningFee: { type: Number, default: 0 },
-    discount: { type: Number, default: 0 },
+    discount: { type: Number, default: 0 }, // all discounts together
+    manualDiscount: Number, // given by staff (not coupon / company / upgrade credit); empty on older records
+    couponDiscount: Number,
+    approvalId: { type: mongoose.Schema.Types.ObjectId, ref: 'DiscountApproval' },
     couponCode: String,
     taxPercent: { type: Number, default: 0 },
     taxAmount: { type: Number, default: 0 },
